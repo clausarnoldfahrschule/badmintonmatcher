@@ -54,13 +54,17 @@ export interface Match {
 }
 
 /**
- * Ein Einzel-Match auf einem Feld (1 gegen 1), wenn 2 Spieler übrig sind
+ * Ein Zusatz-Match auf einem Feld:
+ * - Entweder ein 1vs1-Einzel (wenn beide Spieler Stärke > 3)
+ * - Oder eine Trainer-Challenge (1 Trainer vs. 2 Einsteiger, wenn beide Stärke <= 3)
  */
 export interface SinglesMatch {
   id: string;
   courtNumber: number; // Feldnummer
-  player1: Player;
-  player2: Player;
+  isTrainerChallenge?: boolean; // true = 1 Trainer vs 2 Einsteiger
+  player1: Player; // Bei Einzel: Spieler 1. Bei Challenge: Trainer (Joker)
+  player2: Player; // Bei Einzel: Spieler 2. Bei Challenge: Einsteiger 1
+  player3?: Player; // Nur bei Challenge: Einsteiger 2
   skillDiff: number;
 }
 

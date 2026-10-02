@@ -305,4 +305,40 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     expect(plan3.matches).toHaveLength(1);
     expect(plan3.singlesMatch).toBeNull();
   });
+
+  it('Trainer-Challenge: Wenn 2 Einsteiger (Stärke <= 3) überbleiben, spielt der Trainer 1 gegen 2', () => {
+    // 6 Spieler: 4 Fortgeschrittene (Doppel) + 2 Einsteiger (Stärken 2 und 3)
+    const sixPlayers: Player[] = [
+      { id: 'f1', name: 'Fortgeschritten 1', skill: 8, isActive: true, createdAt: 1 },
+      { id: 'f2', name: 'Fortgeschritten 2', skill: 7, isActive: true, createdAt: 2 },
+      { id: 'f3', name: 'Fortgeschritten 3', skill: 7, isActive: true, createdAt: 3 },
+      { id: 'f4', name: 'Fortgeschritten 4', skill: 6, isActive: true, createdAt: 4 },
+      { id: 'e1', name: 'Einsteiger 1', skill: 3, isActive: true, createdAt: 5 },
+      { id: 'e2', name: 'Einsteiger 2', skill: 2, isActive: true, createdAt: 6 }
+    ];
+
+    const attSix = sixPlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    const plan = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: sixPlayers,
+      attendanceMap: attSix,
+      trainerAvailable: true,
+      trainerSkill: 7
+    });
+
+    // 1 Doppel auf Feld 1 (die 4 Fortgeschrittenen)
+    expect(plan.matches).toHaveLength(1);
+    // Feld 2: Trainer-Challenge 1 gegen 2
+    expect(plan.singlesMatch).not.toBeNull();
+    expect(plan.singlesMatch?.isTrainerChallenge).toBe(true);
+    expect(plan.singlesMatch?.player1.id).toBe(TRAINER_ID); // Trainer spielt alleine
+    expect(plan.singlesMatch?.player2.id).toBe('e1');
+    expect(plan.singlesMatch?.player3?.id).toBe('e2');
+    expect(plan.trainerParticipated).toBe(true);
+  });
 });

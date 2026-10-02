@@ -241,11 +241,19 @@ function selectRestingPlayers(
  */
 function selectSinglesPlayers(
   pool: Player[],
+  roundType: 'peer' | 'mentor' | 'social',
   previousRounds: RoundPlan[]
 ): [Player, Player] | null {
   // Trainer darf niemals im Einzel spielen
   const candidates = pool.filter(p => p.id !== TRAINER_ID);
   if (candidates.length < 2) return null;
+
+  // Im Peer-Modus (Niveau-Gleichheit): Die beiden Spieler am unteren Ende der Rangliste
+  // bilden das Zusatzfeld, damit die stärkeren Spieler auf den vorderen Feldern Doppel spielen
+  if (roundType === 'peer') {
+    const sorted = [...candidates].sort((a, b) => b.skill - a.skill);
+    return [sorted[sorted.length - 2], sorted[sorted.length - 1]];
+  }
 
   // Zähle bisherige Einzel-Teilnahmen am heutigen Abend
   const singlesCountMap = new Map<string, number>();
@@ -259,6 +267,10 @@ function selectSinglesPlayers(
       const id2 = round.singlesMatch.player2.id;
       if (singlesCountMap.has(id1)) singlesCountMap.set(id1, singlesCountMap.get(id1)! + 1);
       if (singlesCountMap.has(id2)) singlesCountMap.set(id2, singlesCountMap.get(id2)! + 1);
+      if (round.singlesMatch.player3) {
+        const id3 = round.singlesMatch.player3.id;
+        if (singlesCountMap.has(id3)) singlesCountMap.set(id3, singlesCountMap.get(id3)! + 1);
+      }
     }
   }
 
@@ -442,19 +454,40 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
   let poolForDoubles = [...activePlayers];
   let singlesMatch: SinglesMatch | null = null;
 
-  // 5. Einzel-Paarung ermitteln (mit Trainer-Ausschluss und Historien-Rotation)
+  // 5. Einzel- bzw. Trainer-Challenge-Paarung ermitteln (mit Trainer-Ausschluss und Historien-Rotation)
   if (hasSingles) {
-    const singlesPair = selectSinglesPlayers(activePlayers, previousRoundsCurrentSession);
+    const singlesPair = selectSinglesPlayers(activePlayers, roundType, previousRoundsCurrentSession);
     if (singlesPair) {
       const [s1, s2] = singlesPair;
       const singlesCourtNumber = maxPossibleDoublesCourts + 1;
-      singlesMatch = {
-        id: `match-r${roundNumber}-c${singlesCourtNumber}-singles-${s1.id}-vs-${s2.id}`,
-        courtNumber: singlesCourtNumber,
-        player1: s1,
-        player2: s2,
-        skillDiff: Math.abs(s1.skill - s2.skill)
-      };
+
+      // Sonderregel: Unteres Drittel der Skala (Stärke <= 3).
+      // Ein reines Einzel zwischen zwei Anfängern ist unüblich.
+      // Wenn der Trainer verfügbar ist, spielt er alleine gegen die zwei Anfänger (1 vs. 2 Trainer-Challenge)!
+      const bothBeginners = s1.skill <= 3 && s2.skill <= 3;
+
+      if (bothBeginners && trainerAvailable) {
+        const trainer = getTrainerPlayer(trainerSkill);
+        trainerParticipated = true;
+        singlesMatch = {
+          id: `match-r${roundNumber}-c${singlesCourtNumber}-challenge-trainer-vs-${s1.id}-${s2.id}`,
+          courtNumber: singlesCourtNumber,
+          isTrainerChallenge: true,
+          player1: trainer,
+          player2: s1,
+          player3: s2,
+          skillDiff: Math.abs(trainer.skill - (s1.skill + s2.skill))
+        };
+      } else {
+        singlesMatch = {
+          id: `match-r${roundNumber}-c${singlesCourtNumber}-singles-${s1.id}-vs-${s2.id}`,
+          courtNumber: singlesCourtNumber,
+          isTrainerChallenge: false,
+          player1: s1,
+          player2: s2,
+          skillDiff: Math.abs(s1.skill - s2.skill)
+        };
+      }
 
       poolForDoubles = activePlayers.filter(p => p.id !== s1.id && p.id !== s2.id);
     }
@@ -624,10 +657,24 @@ export function sessionPlanToHistoricalPairings(plan: SessionPlan): HistoricalPa
     }
 
     if (round.singlesMatch) {
-      const s1 = round.singlesMatch.player1.id;
-      const s2 = round.singlesMatch.player2.id;
-      opponentsMap[s1] = [s2];
-      opponentsMap[s2] = [s1];
+      if (round.singlesMatch.isTrainerChallenge && round.singlesMatch.player3) {
+        const trainerId = round.singlesMatch.player1.id;
+        const b1Id = round.singlesMatch.player2.id;
+        const b2Id = round.singlesMatch.player3.id;
+
+        // b1 und b2 sind Partner im Doppel gegen den Trainer
+        partnerMap[b1Id] = b2Id;
+        partnerMap[b2Id] = b1Id;
+
+        opponentsMap[trainerId] = [b1Id, b2Id];
+        opponentsMap[b1Id] = [trainerId];
+        opponentsMap[b2Id] = [trainerId];
+      } else {
+        const s1 = round.singlesMatch.player1.id;
+        const s2 = round.singlesMatch.player2.id;
+        opponentsMap[s1] = [s2];
+        opponentsMap[s2] = [s1];
+      }
     }
 
     pairings.push({
