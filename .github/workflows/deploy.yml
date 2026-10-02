@@ -1,0 +1,54 @@
+name: Deploy Badminton Matchmaker to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Erlaube dem Workflow, auf GitHub Pages zu deployen
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Quellcode auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Automatisierte Tests ausführen
+        run: npm run test
+
+      - name: Produktions-Bundle bauen
+        run: npm run build
+
+      - name: Pages konfigurieren
+        uses: actions/configure-pages@v5
+
+      - name: Build-Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Auf GitHub Pages bereitstellen
+        id: deployment
+        uses: actions/deploy-pages@v4
