@@ -143,6 +143,36 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     expect(r2Ids).toContain('p4');
   });
 
+  it('Einzel-Regel: Bei 2 übrigen Spielern (z.B. 10 oder 14 Spieler) wird ein 1vs1 Einzel gespielt', () => {
+    // 10 Spieler = 2 Doppel (8 Spieler) + 1 Einzel (2 Spieler)
+    const tenPlayers: Player[] = [
+      ...mockPlayers,
+      { id: 'p9', name: 'Ines (Mittel)', skill: 4, isActive: true, createdAt: 9 },
+      { id: 'p10', name: 'Jan (Mittel)', skill: 4, isActive: true, createdAt: 10 }
+    ];
+    const attendanceTen = tenPlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    const plan = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: tenPlayers,
+      attendanceMap: attendanceTen,
+      trainerAvailable: false, // Trainer bleibt draußen, da 10 Spieler gerade Zahl ist
+      maxCourts: 8
+    });
+
+    expect(plan.matches).toHaveLength(2); // 2 Doppel-Felder
+    expect(plan.singlesMatch).not.toBeNull(); // 1 Einzel-Feld
+    expect(plan.singlesMatch?.courtNumber).toBe(3); // Feld 3 fürs Einzel
+    expect(plan.restingPlayers).toHaveLength(0); // Niemand muss auf die Bank!
+    
+    // Die beiden Einzelspieler haben vergleichbare Stärken
+    expect(plan.singlesMatch?.skillDiff).toBeLessThanOrEqual(2);
+  });
+
   it('Erzeugt eine vollständige 3-Runden-Session (Niveau -> Mentor -> Social)', () => {
     const session = generateFullSession(mockPlayers, defaultAttendance, {
       trainerAvailable: false,

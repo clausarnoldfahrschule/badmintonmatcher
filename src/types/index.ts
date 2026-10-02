@@ -54,13 +54,25 @@ export interface Match {
 }
 
 /**
+ * Ein Einzel-Match auf einem Feld (1 gegen 1), wenn 2 Spieler übrig sind
+ */
+export interface SinglesMatch {
+  id: string;
+  courtNumber: number; // Feldnummer
+  player1: Player;
+  player2: Player;
+  skillDiff: number;
+}
+
+/**
  * Spieler, die in einer bestimmten Runde pausieren (z. B. bei Überhang)
  */
 export interface RoundPlan {
   roundNumber: 1 | 2 | 3;
   roundType: 'peer' | 'mentor' | 'social';
-  matches: Match[];
-  restingPlayers: Player[]; // Pausierende Spieler
+  matches: Match[]; // Doppel-Spiele
+  singlesMatch?: SinglesMatch | null; // 1vs1 Einzel, falls 2 Spieler übrig sind
+  restingPlayers: Player[]; // Pausierende Spieler (nur falls > 0 nach Einzel)
   trainerParticipated: boolean; // Ob der Trainer als Joker auf dem Feld steht
 }
 

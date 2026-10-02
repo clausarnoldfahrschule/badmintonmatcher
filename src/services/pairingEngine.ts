@@ -271,91 +271,137 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
   }
 
   // 3. Maximale Feldbelegung berechnen (max 8 Felder = 32 Spieler)
-  const maxPossibleCourts = Math.min(maxCourts, Math.floor(activePool.length / 4));
-  const neededPlayerCount = maxPossibleCourts * 4;
+  let maxPossibleDoublesCourts = Math.min(maxCourts, Math.floor(activePool.length / 4));
+  let hasSingles = false;
 
-  if (maxPossibleCourts === 0) {
-    // Weniger als 4 Spieler verfügbar -> kein Doppel möglich
+  // Wenn nach den Doppeln mindestens 2 Spieler übrig sind und noch ein Feld frei ist:
+  // Spielen die 2 übrig gebliebenen Spieler ein EINZEL (1 gegen 1)!
+  const remainder = activePool.length - (maxPossibleDoublesCourts * 4);
+  if (remainder >= 2 && maxPossibleDoublesCourts < maxCourts) {
+    hasSingles = true;
+  } else if (maxPossibleDoublesCourts === 0 && activePool.length >= 2 && maxCourts >= 1) {
+    // Falls weniger als 4 Spieler da sind, aber mind. 2: Nur Einzel
+    hasSingles = true;
+  }
+
+  const neededPlayerCount = (maxPossibleDoublesCourts * 4) + (hasSingles ? 2 : 0);
+
+  if (neededPlayerCount === 0) {
+    // Weniger als 2 Spieler verfügbar -> kein Spiel möglich
     return {
       roundNumber,
       roundType,
       matches: [],
+      singlesMatch: null,
       restingPlayers: availablePlayers,
       trainerParticipated: false
     };
   }
 
-  // 4. Pausierende Spieler bestimmen (falls Überschuss)
+  // 4. Pausierende Spieler bestimmen (falls nach Doppel + Einzel immer noch Überhang)
   const { activePlayers, restingPlayers } = selectRestingPlayers(
     activePool,
     neededPlayerCount,
     previousRoundsCurrentSession
   );
 
+  let poolForDoubles = [...activePlayers];
+  let singlesMatch = null;
+
+  // 5. Einzel-Paarung extrahieren (falls hasSingles aktiv)
+  if (hasSingles) {
+    // Sortiere nach Stärke, um zwei Spieler mit möglichst gleicher Spielstärke fürs Einzel zu finden
+    const sortedActive = [...activePlayers].sort((a, b) => b.skill - a.skill);
+    
+    // Finde das Paar mit minimaler Skill-Differenz
+    let bestPairIndex = sortedActive.length - 2; // Default: die beiden am unteren Ende
+    let minDiff = 999;
+    
+    for (let i = 0; i < sortedActive.length - 1; i++) {
+      const diff = Math.abs(sortedActive[i].skill - sortedActive[i + 1].skill);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestPairIndex = i;
+      }
+    }
+
+    const s1 = sortedActive[bestPairIndex];
+    const s2 = sortedActive[bestPairIndex + 1];
+
+    const singlesCourtNumber = maxPossibleDoublesCourts + 1;
+    singlesMatch = {
+      id: `match-r${roundNumber}-c${singlesCourtNumber}-singles-${s1.id}-vs-${s2.id}`,
+      courtNumber: singlesCourtNumber,
+      player1: s1,
+      player2: s2,
+      skillDiff: Math.abs(s1.skill - s2.skill)
+    };
+
+    // Entferne die beiden Einzel-Spieler aus dem Doppel-Pool
+    poolForDoubles = activePlayers.filter(p => p.id !== s1.id && p.id !== s2.id);
+  }
+
   const matches: Match[] = [];
 
-  // 5. Paarungs-Strategie nach Modus ausführen
-  if (roundType === 'peer') {
-    // -------------------------------------------------------------
-    // MODUS: NIVEAU-GLEICHHEIT (Homogen)
-    // Starke mit Starken, Schwächere mit Schwächeren
-    // -------------------------------------------------------------
-    // Spieler nach Stärke absteigend sortieren
-    const sorted = [...activePlayers].sort((a, b) => b.skill - a.skill);
+  // 6. Doppel-Paarungs-Strategie nach Modus ausführen
+  if (maxPossibleDoublesCourts > 0) {
+    if (roundType === 'peer') {
+      // -------------------------------------------------------------
+      // MODUS: NIVEAU-GLEICHHEIT (Homogen)
+      // Starke mit Starken, Schwächere mit Schwächeren
+      // -------------------------------------------------------------
+      const sorted = [...poolForDoubles].sort((a, b) => b.skill - a.skill);
 
-    // In 4er-Gruppen auf die Felder aufteilen
-    for (let c = 0; c < maxPossibleCourts; c++) {
-      const courtNumber = c + 1;
-      const four = sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player];
-      const match = findBestCourtMatch(courtNumber, four, 'peer', historicalPairings, previousRoundsCurrentSession);
-      matches.push(match);
-    }
-  } else if (roundType === 'mentor') {
-    // -------------------------------------------------------------
-    // MODUS: LERN- / MENTOR-RUNDE (Heterogen)
-    // Stärkerer Spieler mit schwächerem Spieler gegen analoge Paarung
-    // -------------------------------------------------------------
-    const sorted = [...activePlayers].sort((a, b) => b.skill - a.skill);
-    const count = sorted.length;
-    const half = count / 2;
+      for (let c = 0; c < maxPossibleDoublesCourts; c++) {
+        const courtNumber = c + 1;
+        const four = sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player];
+        const match = findBestCourtMatch(courtNumber, four, 'peer', historicalPairings, previousRoundsCurrentSession);
+        matches.push(match);
+      }
+    } else if (roundType === 'mentor') {
+      // -------------------------------------------------------------
+      // MODUS: LERN- / MENTOR-RUNDE (Heterogen)
+      // Stärkerer Spieler mit schwächerem Spieler gegen analoge Paarung
+      // -------------------------------------------------------------
+      const sorted = [...poolForDoubles].sort((a, b) => b.skill - a.skill);
+      const count = sorted.length;
+      const half = count / 2;
 
-    const strongHalf = sorted.slice(0, half);
-    const weakHalf = sorted.slice(half).reverse(); // Schwächste zuerst
+      const strongHalf = sorted.slice(0, half);
+      const weakHalf = sorted.slice(half).reverse(); // Schwächste zuerst
 
-    // Mentor-Teams bilden: Stärkster mit Schwächstem, 2. Stärkster mit 2. Schwächstem usw.
-    const mentorTeams: Team[] = [];
-    for (let i = 0; i < half; i++) {
-      mentorTeams.push(createTeam(strongHalf[i], weakHalf[i]));
-    }
+      const mentorTeams: Team[] = [];
+      for (let i = 0; i < half; i++) {
+        mentorTeams.push(createTeam(strongHalf[i], weakHalf[i]));
+      }
 
-    // Teams nach Summen-Stärke sortieren und benachbarte Teams auf ein Feld setzen
-    mentorTeams.sort((a, b) => b.totalSkill - a.totalSkill);
+      mentorTeams.sort((a, b) => b.totalSkill - a.totalSkill);
 
-    for (let c = 0; c < maxPossibleCourts; c++) {
-      const courtNumber = c + 1;
-      const team1 = mentorTeams[c * 2];
-      const team2 = mentorTeams[c * 2 + 1];
+      for (let c = 0; c < maxPossibleDoublesCourts; c++) {
+        const courtNumber = c + 1;
+        const team1 = mentorTeams[c * 2];
+        const team2 = mentorTeams[c * 2 + 1];
 
-      matches.push({
-        id: `match-r${roundNumber}-c${courtNumber}-mentor`,
-        courtNumber,
-        team1,
-        team2,
-        roundType: 'mentor',
-        skillDiff: Math.abs(team1.totalSkill - team2.totalSkill)
-      });
-    }
-  } else {
-    // -------------------------------------------------------------
-    // MODUS: SOZIALER MIX (Abwechslung)
-    // -------------------------------------------------------------
-    // Leicht durchmischen, aber 4er-Gruppen bilden
-    const sorted = [...activePlayers].sort((a, b) => b.skill - a.skill);
-    for (let c = 0; c < maxPossibleCourts; c++) {
-      const courtNumber = c + 1;
-      const four = sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player];
-      const match = findBestCourtMatch(courtNumber, four, 'social', historicalPairings, previousRoundsCurrentSession);
-      matches.push(match);
+        matches.push({
+          id: `match-r${roundNumber}-c${courtNumber}-mentor`,
+          courtNumber,
+          team1,
+          team2,
+          roundType: 'mentor',
+          skillDiff: Math.abs(team1.totalSkill - team2.totalSkill)
+        });
+      }
+    } else {
+      // -------------------------------------------------------------
+      // MODUS: SOZIALER MIX (Abwechslung)
+      // -------------------------------------------------------------
+      const sorted = [...poolForDoubles].sort((a, b) => b.skill - a.skill);
+      for (let c = 0; c < maxPossibleDoublesCourts; c++) {
+        const courtNumber = c + 1;
+        const four = sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player];
+        const match = findBestCourtMatch(courtNumber, four, 'social', historicalPairings, previousRoundsCurrentSession);
+        matches.push(match);
+      }
     }
   }
 
@@ -363,6 +409,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
     roundNumber,
     roundType,
     matches,
+    singlesMatch,
     restingPlayers,
     trainerParticipated
   };

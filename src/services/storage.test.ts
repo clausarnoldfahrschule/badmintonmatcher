@@ -14,7 +14,7 @@ describe('Storage Service & Encrypted Transfer', () => {
 
   beforeEach(() => {
     store = {};
-    global.localStorage = {
+    (globalThis as any).localStorage = {
       getItem: (key: string) => store[key] || null,
       setItem: (key: string, value: string) => {
         store[key] = value.toString();
