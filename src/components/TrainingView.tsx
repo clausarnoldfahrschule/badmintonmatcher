@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Player, SessionPlan } from '../types';
-import { generateFullSession, generateRoundPlan } from '../services/pairingEngine';
+import { useState } from 'react';
+import { Player, SessionPlan, HistoricalPairing } from '../types';
+import { generateFullSession, generateRoundPlan, sessionPlanToHistoricalPairings } from '../services/pairingEngine';
+import { loadHistory, saveHistory } from '../services/storage';
 import { CourtCard } from './CourtCard';
 import { SinglesCourtCard } from './SinglesCourtCard';
 import { DropoutModal } from './DropoutModal';
@@ -9,7 +10,9 @@ import {
   AlertTriangle,
   UserCheck,
   Coffee,
-  Check
+  Check,
+  CheckCircle2,
+  BookmarkPlus
 } from 'lucide-react';
 
 interface TrainingViewProps {
@@ -34,10 +37,12 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     return initial;
   });
 
+  const [history, setHistory] = useState<HistoricalPairing[]>(() => loadHistory());
   const [trainerAvailable, setTrainerAvailable] = useState<boolean>(true);
   const [sessionPlan, setSessionPlan] = useState<SessionPlan | null>(null);
   const [activeRoundTab, setActiveRoundTab] = useState<1 | 2 | 3>(1);
   const [isDropoutModalOpen, setIsDropoutModalOpen] = useState<boolean>(false);
+  const [sessionSaved, setSessionSaved] = useState<boolean>(false);
 
   // Zähle anwesende Spieler pro Runde
   const activeCountR1 = players.filter(p => attendance[p.id]?.round1).length;
@@ -78,17 +83,34 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   };
 
   const handleGeneratePlan = () => {
+    const currentHist = loadHistory();
+    setHistory(currentHist);
     const plan = generateFullSession(players, attendance, {
       trainerAvailable,
       trainerSkill,
-      maxCourts: 8
+      maxCourts: 8,
+      historicalPairings: currentHist
     });
     setSessionPlan(plan);
+    setSessionSaved(false);
+  };
+
+  const handleSaveSession = () => {
+    if (!sessionPlan) return;
+    const newPairings = sessionPlanToHistoricalPairings(sessionPlan);
+    const updatedHistory = [...history, ...newPairings];
+    saveHistory(updatedHistory);
+    setHistory(updatedHistory);
+    setSessionSaved(true);
   };
 
   const handleConfirmDropout = (playerId: string, fromRound: 1 | 2 | 3) => {
-    // Aktualisiere Attendance
-    const updatedAttendance = { ...attendance };
+    // Sicheres Deep-Cloning von attendance gegen State-Mutation
+    const updatedAttendance: typeof attendance = {};
+    for (const key of Object.keys(attendance)) {
+      updatedAttendance[key] = { ...attendance[key] };
+    }
+
     if (updatedAttendance[playerId]) {
       if (fromRound <= 1) updatedAttendance[playerId].round1 = false;
       if (fromRound <= 2) updatedAttendance[playerId].round2 = false;
@@ -114,6 +136,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         trainerAvailable,
         trainerSkill,
         maxCourts: 8,
+        historicalPairings: history,
         previousRoundsCurrentSession: prevRounds
       });
     }
@@ -122,6 +145,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       ...sessionPlan,
       rounds: newRounds
     });
+    setSessionSaved(false);
   };
 
   const currentRound = sessionPlan ? sessionPlan.rounds[activeRoundTab - 1] : null;
@@ -380,6 +404,38 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Abschluss & Historie sichern */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div>
+              <h4 className="text-xs font-bold text-slate-800">Trainingsabend dokumentieren</h4>
+              <p className="text-[11px] text-slate-500">
+                Speichert alle heutigen Paarungen, damit nächste Woche neue Kombinationen bevorzugt werden.
+              </p>
+            </div>
+
+            <button
+              onClick={handleSaveSession}
+              disabled={sessionSaved}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow ${
+                sessionSaved
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                  : 'bg-slate-900 hover:bg-slate-800 text-white'
+              }`}
+            >
+              {sessionSaved ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>In Historie gespeichert ✓</span>
+                </>
+              ) : (
+                <>
+                  <BookmarkPlus className="w-4 h-4 text-emerald-400" />
+                  <span>Abend abschließen & in Historie sichern</span>
+                </>
+              )}
+            </button>
+          </div>
         </section>
       )}
 

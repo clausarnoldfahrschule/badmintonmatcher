@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Player } from '../types';
 import { AlertTriangle, X } from 'lucide-react';
 
@@ -19,6 +19,14 @@ export const DropoutModal: React.FC<DropoutModalProps> = ({
 }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
   const [fromRound, setFromRound] = useState<1 | 2 | 3>(activeRound);
+
+  // Synchronisiere die vorausgewählte Runde und Auswahl beim Öffnen des Modals
+  useEffect(() => {
+    if (isOpen) {
+      setFromRound(activeRound);
+      setSelectedPlayerId('');
+    }
+  }, [isOpen, activeRound]);
 
   if (!isOpen) return null;
 

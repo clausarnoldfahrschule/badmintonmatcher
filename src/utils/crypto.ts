@@ -69,8 +69,8 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
  * Gibt einen JSON-String mit Salt, IV und verschlüsseltem Ciphertext zurück.
  */
 export async function encryptData<T>(data: T, password: string): Promise<string> {
-  if (!password || password.trim().length === 0) {
-    throw new Error('Das Passwort darf nicht leer sein.');
+  if (!password || password.trim().length < 4) {
+    throw new Error('Das Passwort muss mindestens 4 Zeichen lang sein.');
   }
 
   // 16 Bytes Zufalls-Salt erzeugen
@@ -110,14 +110,21 @@ export async function decryptData<T>(encryptedJsonString: string, password: stri
     throw new Error('Bitte gib ein Passwort zur Entschlüsselung ein.');
   }
 
-  let payload: EncryptedPayload;
+  let payload: any;
   try {
     payload = JSON.parse(encryptedJsonString);
   } catch {
     throw new Error('Die Datei hat kein gültiges Format.');
   }
 
-  if (payload.version !== 1 || !payload.salt || !payload.iv || !payload.data) {
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    payload.version !== 1 ||
+    typeof payload.salt !== 'string' ||
+    typeof payload.iv !== 'string' ||
+    typeof payload.data !== 'string'
+  ) {
     throw new Error('Ungültiges Datenformat der Sicherungsdatei.');
   }
 

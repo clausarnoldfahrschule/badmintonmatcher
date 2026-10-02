@@ -184,4 +184,125 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     expect(session.rounds[1].roundType).toBe('mentor');
     expect(session.rounds[2].roundType).toBe('social');
   });
+
+  it('Modus Social (Mix): Mischt Spieler felderübergreifend (Snake-Verteilung)', () => {
+    const plan = generateRoundPlan({
+      roundNumber: 3,
+      roundType: 'social',
+      players: mockPlayers,
+      attendanceMap: defaultAttendance,
+      trainerAvailable: false
+    });
+
+    expect(plan.matches).toHaveLength(2);
+
+    // In Modus Social darf Feld 1 NICHT nur aus den 4 stärksten Spielern bestehen
+    const court1PlayerIds = [
+      plan.matches[0].team1.player1.id,
+      plan.matches[0].team1.player2.id,
+      plan.matches[0].team2.player1.id,
+      plan.matches[0].team2.player2.id
+    ];
+
+    // Feld 1 enthält mindestens einen Spieler aus der unteren Hälfte (Skills 5, 3 oder 2)
+    const hasLowerPlayer = court1PlayerIds.some(id => ['p5', 'p6', 'p7', 'p8'].includes(id));
+    expect(hasLowerPlayer).toBe(true);
+  });
+
+  it('Einzel-Rotation: Spieler wechseln über die Runden im Einzel ab', () => {
+    const tenPlayers: Player[] = [
+      ...mockPlayers,
+      { id: 'p9', name: 'Ines', skill: 4, isActive: true, createdAt: 9 },
+      { id: 'p10', name: 'Jan', skill: 4, isActive: true, createdAt: 10 }
+    ];
+    const attendanceTen = tenPlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    // Runde 1
+    const r1 = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: tenPlayers,
+      attendanceMap: attendanceTen,
+      trainerAvailable: false
+    });
+    expect(r1.singlesMatch).not.toBeNull();
+    const r1SinglesIds = [r1.singlesMatch!.player1.id, r1.singlesMatch!.player2.id];
+
+    // Runde 2 mit R1 als Historie
+    const r2 = generateRoundPlan({
+      roundNumber: 2,
+      roundType: 'mentor',
+      players: tenPlayers,
+      attendanceMap: attendanceTen,
+      trainerAvailable: false,
+      previousRoundsCurrentSession: [r1]
+    });
+    expect(r2.singlesMatch).not.toBeNull();
+    const r2SinglesIds = [r2.singlesMatch!.player1.id, r2.singlesMatch!.player2.id];
+
+    // In Runde 2 müssen andere Spieler das Einzel bestreiten!
+    const overlap = r2SinglesIds.filter(id => r1SinglesIds.includes(id));
+    expect(overlap.length).toBeLessThan(2);
+  });
+
+  it('Trainer-Joker: Darf niemals im Einzel eingesetzt werden', () => {
+    // 5 Spieler anwesend + Trainer = 6 Spieler -> 1 Doppel (4 Spieler) + 1 Einzel (2 Spieler)
+    const fivePlayers = mockPlayers.slice(0, 5);
+    const attendanceFive = fivePlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    const plan = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: fivePlayers,
+      attendanceMap: attendanceFive,
+      trainerAvailable: true,
+      trainerSkill: 7
+    });
+
+    expect(plan.trainerParticipated).toBe(true);
+    expect(plan.singlesMatch).not.toBeNull();
+
+    // Der Trainer darf NICHT im Einzel spielen!
+    expect(plan.singlesMatch!.player1.id).not.toBe(TRAINER_ID);
+    expect(plan.singlesMatch!.player2.id).not.toBe(TRAINER_ID);
+  });
+
+  it('Randfälle: 2 Spieler (Einzel) und 3 Spieler + Trainer (Doppel)', () => {
+    // 2 Spieler -> 1 Einzel
+    const twoPlayers = mockPlayers.slice(0, 2);
+    const att2 = { p1: { round1: true, round2: true, round3: true }, p2: { round1: true, round2: true, round3: true } };
+    const plan2 = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: twoPlayers,
+      attendanceMap: att2,
+      trainerAvailable: false
+    });
+    expect(plan2.matches).toHaveLength(0);
+    expect(plan2.singlesMatch).not.toBeNull();
+
+    // 3 Spieler + Trainer -> 1 volles Doppel
+    const threePlayers = mockPlayers.slice(0, 3);
+    const att3 = {
+      p1: { round1: true, round2: true, round3: true },
+      p2: { round1: true, round2: true, round3: true },
+      p3: { round1: true, round2: true, round3: true }
+    };
+    const plan3 = generateRoundPlan({
+      roundNumber: 1,
+      roundType: 'peer',
+      players: threePlayers,
+      attendanceMap: att3,
+      trainerAvailable: true
+    });
+    expect(plan3.trainerParticipated).toBe(true);
+    expect(plan3.matches).toHaveLength(1);
+    expect(plan3.singlesMatch).toBeNull();
+  });
 });

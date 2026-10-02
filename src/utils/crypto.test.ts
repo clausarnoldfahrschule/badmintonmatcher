@@ -34,8 +34,14 @@ describe('Verschlüsselung (Web Crypto AES-GCM)', () => {
     );
   });
 
-  it('sollte bei leerem Passwort die Verschlüsselung verweigern', async () => {
-    await expect(encryptData(sampleData, '')).rejects.toThrow('Das Passwort darf nicht leer sein.');
+  it('sollte bei zu kurzem oder leerem Passwort die Verschlüsselung verweigern', async () => {
+    await expect(encryptData(sampleData, '')).rejects.toThrow('mindestens 4 Zeichen');
+    await expect(encryptData(sampleData, '123')).rejects.toThrow('mindestens 4 Zeichen');
+  });
+
+  it('sollte bei "null" oder ungültigem JSON-Inhalt einen Fehler werfen', async () => {
+    await expect(decryptData('null', 'TestPasswort')).rejects.toThrow('Ungültiges Datenformat');
+    await expect(decryptData('{}', 'TestPasswort')).rejects.toThrow('Ungültiges Datenformat');
   });
 
   it('sollte bei manipulierter Datei die Entschlüsselung abbrechen', async () => {
