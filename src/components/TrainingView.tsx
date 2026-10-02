@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Player, SessionPlan, HistoricalPairing } from '../types';
 import { generateFullSession, generateRoundPlan, sessionPlanToHistoricalPairings } from '../services/pairingEngine';
 import { loadHistory, saveHistory } from '../services/storage';
@@ -26,6 +26,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   trainerSkill,
   onUpdateTrainerSkill
 }) => {
+  const planRef = useRef<HTMLDivElement>(null);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
+
   // Anwesenheits-Zustand pro Spieler (default: alle 3 Runden aktiv für aktive Spieler)
   const [attendance, setAttendance] = useState<
     Record<string, { round1: boolean; round2: boolean; round3: boolean }>
@@ -36,6 +39,21 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     });
     return initial;
   });
+
+  // Synchronisiere attendance, sobald sich die Spielerliste ändert
+  useEffect(() => {
+    setAttendance(prev => {
+      const updated = { ...prev };
+      let changed = false;
+      players.forEach(p => {
+        if (updated[p.id] === undefined) {
+          updated[p.id] = { round1: p.isActive, round2: p.isActive, round3: p.isActive };
+          changed = true;
+        }
+      });
+      return changed ? updated : prev;
+    });
+  }, [players]);
 
   const [history, setHistory] = useState<HistoricalPairing[]>(() => loadHistory());
   const [trainerAvailable, setTrainerAvailable] = useState<boolean>(true);
@@ -50,6 +68,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   const activeCountR3 = players.filter(p => attendance[p.id]?.round3).length;
 
   const toggleAll = (state: boolean) => {
+    setWarningMsg(null);
     const updated: typeof attendance = {};
     players.forEach(p => {
       updated[p.id] = { round1: state, round2: state, round3: state };
@@ -58,6 +77,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   };
 
   const togglePlayerRound = (playerId: string, round: 'round1' | 'round2' | 'round3') => {
+    setWarningMsg(null);
     setAttendance(prev => {
       const current = prev[playerId] || { round1: false, round2: false, round3: false };
       return {
@@ -71,6 +91,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   };
 
   const togglePlayerEntirely = (playerId: string) => {
+    setWarningMsg(null);
     setAttendance(prev => {
       const current = prev[playerId] || { round1: false, round2: false, round3: false };
       const isAnyActive = current.round1 || current.round2 || current.round3;
@@ -83,6 +104,13 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   };
 
   const handleGeneratePlan = () => {
+    const maxActive = Math.max(activeCountR1, activeCountR2, activeCountR3);
+    if (maxActive < 2 && !(maxActive === 1 && trainerAvailable)) {
+      setWarningMsg('Bitte wähle mindestens 2 Spieler für den Abend aus.');
+      return;
+    }
+    setWarningMsg(null);
+
     const currentHist = loadHistory();
     setHistory(currentHist);
     const plan = generateFullSession(players, attendance, {
@@ -93,6 +121,11 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     });
     setSessionPlan(plan);
     setSessionSaved(false);
+
+    // Sanft zum generierten Spielplan scrollen
+    setTimeout(() => {
+      planRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
   };
 
   const handleSaveSession = () => {
@@ -299,6 +332,14 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
           })}
         </div>
 
+        {/* Warnung bei zu wenigen Spielern */}
+        {warningMsg && (
+          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-bold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{warningMsg}</span>
+          </div>
+        )}
+
         {/* Großer CTA-Button zum Generieren */}
         <div className="mt-5 pt-4 border-t border-slate-100">
           <button
@@ -313,7 +354,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
 
       {/* Spielplan-Ergebnis */}
       {sessionPlan && currentRound && (
-        <section className="space-y-4">
+        <section ref={planRef} className="space-y-4 scroll-mt-20">
           {/* Runden-Auswahl Tabs */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1 bg-white p-1 rounded-2xl border border-slate-200 shadow-xs">
@@ -376,6 +417,16 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
               </span>
             )}
           </div>
+
+          {/* Hinweis falls keine Spiele zustande kamen */}
+          {currentRound.matches.length === 0 && !currentRound.singlesMatch && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center text-amber-900">
+              <p className="font-bold text-sm">Keine Spiele für Runde {activeRoundTab} möglich</p>
+              <p className="text-xs mt-1 text-amber-700">
+                Für diese Runde wurden zu wenige Spieler ausgewählt. Mindestens 2 Spieler werden für ein Einzel oder 3 Spieler + Trainer für ein Doppel benötigt.
+              </p>
+            </div>
+          )}
 
           {/* Spielfelder Grid (Doppel + optionales 1vs1 Einzel) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

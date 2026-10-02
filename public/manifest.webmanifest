@@ -1,0 +1,17 @@
+{
+  "name": "Badminton Matchmaker",
+  "short_name": "Matchmaker",
+  "description": "Intelligente Trainings- und Paarungsplanung für Badminton-Doppel",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "./badminton-shuttle.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

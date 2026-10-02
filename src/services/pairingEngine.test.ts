@@ -341,4 +341,24 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     expect(plan.singlesMatch?.player3?.id).toBe('e2');
     expect(plan.trainerParticipated).toBe(true);
   });
+
+  it('Stabilitätstest: generateFullSession darf für keine Spieleranzahl (0 bis 16) abstürzen', () => {
+    for (let k = 0; k <= 16; k++) {
+      const subset = mockPlayers.slice(0, k);
+      const att = subset.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      // Mit Trainer
+      expect(() => {
+        generateFullSession(subset, att, { trainerAvailable: true, trainerSkill: 7 });
+      }).not.toThrow();
+
+      // Ohne Trainer
+      expect(() => {
+        generateFullSession(subset, att, { trainerAvailable: false, trainerSkill: 7 });
+      }).not.toThrow();
+    }
+  });
 });

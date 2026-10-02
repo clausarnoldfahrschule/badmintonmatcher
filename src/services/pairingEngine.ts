@@ -403,7 +403,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
   const availablePlayers = players.filter(p => {
     if (!p.isActive) return false;
     const att = attendanceMap[p.id];
-    return att ? att[roundKey] : true;
+    return att ? Boolean(att[roundKey]) : false;
   });
 
   let activePool = [...availablePlayers];

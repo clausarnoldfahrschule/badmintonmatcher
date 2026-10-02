@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Player } from './types';
 import {
   loadPlayers,
@@ -13,14 +13,10 @@ import { TransferView } from './components/TransferView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('training');
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [trainerSkill, setTrainerSkill] = useState<number>(7);
+  const [players, setPlayers] = useState<Player[]>(() => loadPlayers());
+  const [trainerSkill, setTrainerSkill] = useState<number>(() => loadTrainerSkill());
 
-  // Initiales Laden aus dem lokalen Speicher (Offline-First)
-  useEffect(() => {
-    refreshData();
-  }, []);
-
+  // Aktualisierung bei Datenänderung
   const refreshData = () => {
     setPlayers(loadPlayers());
     setTrainerSkill(loadTrainerSkill());
