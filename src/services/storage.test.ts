@@ -4,7 +4,10 @@ import {
   savePlayers,
   exportEncryptedBackup,
   importEncryptedBackup,
-  DEFAULT_DEMO_PLAYERS
+  DEFAULT_DEMO_PLAYERS,
+  loadActiveSession,
+  saveActiveSession,
+  clearActiveSession
 } from './storage';
 import { Player } from '../types';
 
@@ -77,5 +80,26 @@ describe('Storage Service & Encrypted Transfer', () => {
     await expect(
       importEncryptedBackup(encryptedBackup, 'FalschesPasswort')
     ).rejects.toThrow('Entschlüsselung fehlgeschlagen');
+  });
+
+  it('sollte aktive Sitzung speichern, laden und leeren können', () => {
+    expect(loadActiveSession()).toBeNull();
+
+    const mockState = {
+      sessionPlan: null,
+      attendance: { p1: { round1: true, round2: false, round3: true } },
+      activeRoundTab: 2 as const,
+      trainerAvailable: false
+    };
+
+    saveActiveSession(mockState);
+    const loaded = loadActiveSession();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.activeRoundTab).toBe(2);
+    expect(loaded?.trainerAvailable).toBe(false);
+    expect(loaded?.attendance['p1']?.round2).toBe(false);
+
+    clearActiveSession();
+    expect(loadActiveSession()).toBeNull();
   });
 });

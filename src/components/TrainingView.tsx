@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Player, SessionPlan, HistoricalPairing } from '../types';
 import { generateFullSession, generateRoundPlan, sessionPlanToHistoricalPairings } from '../services/pairingEngine';
-import { loadHistory, saveHistory } from '../services/storage';
+import { loadHistory, saveHistory, loadActiveSession, saveActiveSession, clearActiveSession } from '../services/storage';
 import { CourtCard } from './CourtCard';
 import { SinglesCourtCard } from './SinglesCourtCard';
 import { DropoutModal } from './DropoutModal';
@@ -12,7 +12,8 @@ import {
   Coffee,
   Check,
   CheckCircle2,
-  BookmarkPlus
+  BookmarkPlus,
+  RotateCcw
 } from 'lucide-react';
 
 interface TrainingViewProps {
@@ -29,10 +30,16 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   const planRef = useRef<HTMLDivElement>(null);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
 
+  // Gespeicherten Zwischenstand aus vorheriger Sitzung (z.B. nach Browser-Refresh) laden
+  const savedSession = useRef(loadActiveSession()).current;
+
   // Anwesenheits-Zustand pro Spieler (default: alle 3 Runden aktiv für aktive Spieler)
   const [attendance, setAttendance] = useState<
     Record<string, { round1: boolean; round2: boolean; round3: boolean }>
   >(() => {
+    if (savedSession?.attendance) {
+      return savedSession.attendance;
+    }
     const initial: Record<string, { round1: boolean; round2: boolean; round3: boolean }> = {};
     players.forEach(p => {
       initial[p.id] = { round1: p.isActive, round2: p.isActive, round3: p.isActive };
@@ -40,7 +47,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     return initial;
   });
 
-  // Synchronisiere attendance, sobald sich die Spielerliste ändert
+  // Synchronisiere attendance, sobald sich die Spielerliste ändert (z.B. neue Spieler hinzugefügt)
   useEffect(() => {
     setAttendance(prev => {
       const updated = { ...prev };
@@ -56,11 +63,27 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   }, [players]);
 
   const [history, setHistory] = useState<HistoricalPairing[]>(() => loadHistory());
-  const [trainerAvailable, setTrainerAvailable] = useState<boolean>(true);
-  const [sessionPlan, setSessionPlan] = useState<SessionPlan | null>(null);
-  const [activeRoundTab, setActiveRoundTab] = useState<1 | 2 | 3>(1);
+  const [trainerAvailable, setTrainerAvailable] = useState<boolean>(
+    savedSession ? savedSession.trainerAvailable : true
+  );
+  const [sessionPlan, setSessionPlan] = useState<SessionPlan | null>(
+    savedSession ? savedSession.sessionPlan : null
+  );
+  const [activeRoundTab, setActiveRoundTab] = useState<1 | 2 | 3>(
+    savedSession ? savedSession.activeRoundTab : 1
+  );
   const [isDropoutModalOpen, setIsDropoutModalOpen] = useState<boolean>(false);
   const [sessionSaved, setSessionSaved] = useState<boolean>(false);
+
+  // Aktiven Trainingsabend automatisch im LocalStorage sichern
+  useEffect(() => {
+    saveActiveSession({
+      sessionPlan,
+      attendance,
+      activeRoundTab,
+      trainerAvailable
+    });
+  }, [sessionPlan, attendance, activeRoundTab, trainerAvailable]);
 
   // Zähle anwesende Spieler pro Runde
   const activeCountR1 = players.filter(p => attendance[p.id]?.round1).length;
@@ -135,6 +158,20 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     saveHistory(updatedHistory);
     setHistory(updatedHistory);
     setSessionSaved(true);
+  };
+
+  const handleResetSession = () => {
+    if (window.confirm('Möchtest du den aktuellen Trainingsabend abschließen/zurücksetzen und einen neuen Abend vorbereiten? Der aktuelle Spielplan wird geleert.')) {
+      clearActiveSession();
+      setSessionPlan(null);
+      setSessionSaved(false);
+      setActiveRoundTab(1);
+      const resetAtt: Record<string, { round1: boolean; round2: boolean; round3: boolean }> = {};
+      players.forEach(p => {
+        resetAtt[p.id] = { round1: p.isActive, round2: p.isActive, round3: p.isActive };
+      });
+      setAttendance(resetAtt);
+    }
   };
 
   const handleConfirmDropout = (playerId: string, fromRound: 1 | 2 | 3) => {
@@ -381,14 +418,26 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
               })}
             </div>
 
-            {/* Spontanausfall Button */}
-            <button
-              onClick={() => setIsDropoutModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition shadow-2xs"
-            >
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <span>Ausfall melden</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Neuer Abend / Reset Button */}
+              <button
+                onClick={handleResetSession}
+                className="flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition shadow-2xs"
+                title="Aktuellen Spielplan verwerfen und neuen Trainingsabend vorbereiten"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>Neuer Abend</span>
+              </button>
+
+              {/* Spontanausfall Button */}
+              <button
+                onClick={() => setIsDropoutModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition shadow-2xs"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <span>Ausfall melden</span>
+              </button>
+            </div>
           </div>
 
           {/* Banner für Runden-Details */}
@@ -496,6 +545,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         onClose={() => setIsDropoutModalOpen(false)}
         players={players}
         activeRound={activeRoundTab}
+        attendanceMap={attendance}
         onConfirmDropout={handleConfirmDropout}
       />
     </div>

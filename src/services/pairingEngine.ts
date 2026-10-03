@@ -463,10 +463,11 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
 
       // Sonderregel: Unteres Drittel der Skala (Stärke <= 3).
       // Ein reines Einzel zwischen zwei Anfängern ist unüblich.
-      // Wenn der Trainer verfügbar ist, spielt er alleine gegen die zwei Anfänger (1 vs. 2 Trainer-Challenge)!
+      // Wenn der Trainer verfügbar ist UND noch nicht im Doppel eingesetzt wurde,
+      // spielt er alleine gegen die zwei Anfänger (1 vs. 2 Trainer-Challenge)!
       const bothBeginners = s1.skill <= 3 && s2.skill <= 3;
 
-      if (bothBeginners && trainerAvailable) {
+      if (bothBeginners && trainerAvailable && !trainerParticipated) {
         const trainer = getTrainerPlayer(trainerSkill);
         trainerParticipated = true;
         singlesMatch = {

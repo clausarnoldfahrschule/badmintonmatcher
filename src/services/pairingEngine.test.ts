@@ -342,6 +342,42 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     expect(plan.trainerParticipated).toBe(true);
   });
 
+  it('Trainer-Eindeutigkeit: Trainer darf niemals auf mehr als einem Feld gleichzeitig eingesetzt werden', () => {
+    // 5 Spieler: 3 Fortgeschrittene + 2 Einsteiger
+    const fivePlayers: Player[] = [
+      { id: 'f1', name: 'Fortgeschritten 1', skill: 8, isActive: true, createdAt: 1 },
+      { id: 'f2', name: 'Fortgeschritten 2', skill: 7, isActive: true, createdAt: 2 },
+      { id: 'f3', name: 'Fortgeschritten 3', skill: 7, isActive: true, createdAt: 3 },
+      { id: 'e1', name: 'Einsteiger 1', skill: 3, isActive: true, createdAt: 4 },
+      { id: 'e2', name: 'Einsteiger 2', skill: 2, isActive: true, createdAt: 5 }
+    ];
+
+    const attFive = fivePlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    const session = generateFullSession(fivePlayers, attFive, { trainerAvailable: true, trainerSkill: 7 });
+
+    for (const round of [session.round1, session.round2, session.round3]) {
+      if (!round) continue;
+      let trainerCount = 0;
+      for (const match of round.matches) {
+        if (match.team1.player1.id === TRAINER_ID) trainerCount++;
+        if (match.team1.player2.id === TRAINER_ID) trainerCount++;
+        if (match.team2.player1.id === TRAINER_ID) trainerCount++;
+        if (match.team2.player2.id === TRAINER_ID) trainerCount++;
+      }
+      if (round.singlesMatch) {
+        if (round.singlesMatch.player1.id === TRAINER_ID) trainerCount++;
+        if (round.singlesMatch.player2.id === TRAINER_ID) trainerCount++;
+        if (round.singlesMatch.player3?.id === TRAINER_ID) trainerCount++;
+      }
+      // Trainer darf höchstens 1x pro Runde spielen
+      expect(trainerCount).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('Stabilitätstest: generateFullSession darf für keine Spieleranzahl (0 bis 16) abstürzen', () => {
     for (let k = 0; k <= 16; k++) {
       const subset = mockPlayers.slice(0, k);

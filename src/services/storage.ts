@@ -5,14 +5,22 @@
  * bei Trainer-Urlaub oder Krankheit an die Vertretung.
  */
 
-import { Player, HistoricalPairing, BackupData } from '../types';
+import { Player, HistoricalPairing, BackupData, SessionPlan } from '../types';
 import { encryptData, decryptData } from '../utils/crypto';
 
 const STORAGE_KEYS = {
   PLAYERS: 'badminton_players_v1',
   HISTORY: 'badminton_history_v1',
-  TRAINER_SKILL: 'badminton_trainer_skill_v1'
+  TRAINER_SKILL: 'badminton_trainer_skill_v1',
+  ACTIVE_SESSION: 'badminton_active_session_v1'
 };
+
+export interface ActiveSessionState {
+  sessionPlan: SessionPlan | null;
+  attendance: Record<string, { round1: boolean; round2: boolean; round3: boolean }>;
+  activeRoundTab: 1 | 2 | 3;
+  trainerAvailable: boolean;
+}
 
 /**
  * 16 realistische Demo-Spieler für den schnellen Start ohne manuelles Tippen
@@ -160,4 +168,39 @@ export function resetToDemo(): void {
   savePlayers(DEFAULT_DEMO_PLAYERS);
   saveHistory([]);
   saveTrainerSkill(7);
+  clearActiveSession();
+}
+
+/**
+ * Lädt die aktive Trainingssitzung (Spielplan + Anwesenheit)
+ */
+export function loadActiveSession(): ActiveSessionState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACTIVE_SESSION);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Speichert den aktuellen Status des Trainingsabends (Spielplan + Anwesenheit)
+ */
+export function saveActiveSession(state: ActiveSessionState): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ACTIVE_SESSION, JSON.stringify(state));
+  } catch (err) {
+    console.error('Fehler beim Speichern der aktiven Sitzung:', err);
+  }
+}
+
+/**
+ * Löscht die aktive Trainingssitzung für einen neuen Abend
+ */
+export function clearActiveSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION);
+  } catch (err) {
+    console.error('Fehler beim Zurücksetzen der Sitzung:', err);
+  }
 }

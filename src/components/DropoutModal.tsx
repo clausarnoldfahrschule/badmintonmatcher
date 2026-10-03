@@ -7,6 +7,7 @@ interface DropoutModalProps {
   onClose: () => void;
   players: Player[];
   activeRound: 1 | 2 | 3;
+  attendanceMap?: Record<string, { round1: boolean; round2: boolean; round3: boolean }>;
   onConfirmDropout: (playerId: string, fromRound: 1 | 2 | 3) => void;
 }
 
@@ -15,6 +16,7 @@ export const DropoutModal: React.FC<DropoutModalProps> = ({
   onClose,
   players,
   activeRound,
+  attendanceMap,
   onConfirmDropout
 }) => {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
@@ -27,6 +29,13 @@ export const DropoutModal: React.FC<DropoutModalProps> = ({
       setSelectedPlayerId('');
     }
   }, [isOpen, activeRound]);
+
+  // Nur Spieler anzeigen, die in der gewählten Runde überhaupt anwesend sind
+  const roundKey = fromRound === 1 ? 'round1' : fromRound === 2 ? 'round2' : 'round3';
+  const eligiblePlayers = players.filter(p => {
+    if (!attendanceMap) return true;
+    return attendanceMap[p.id]?.[roundKey] ?? false;
+  });
 
   if (!isOpen) return null;
 
@@ -66,8 +75,8 @@ export const DropoutModal: React.FC<DropoutModalProps> = ({
               onChange={e => setSelectedPlayerId(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
             >
-              <option value="">-- Spieler auswählen --</option>
-              {players.map(p => (
+              <option value="">-- Spieler auswählen ({eligiblePlayers.length} aktiv) --</option>
+              {eligiblePlayers.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} (Stärke {p.skill})
                 </option>
