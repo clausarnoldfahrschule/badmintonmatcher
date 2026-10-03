@@ -164,13 +164,30 @@ export function findBestCourtMatch(
     // Strafpunkte aus der Historie (Wiederholungen vermeiden)
     const historyPenalty = calculateHistoryPenalty(p1, p2, p3, p4, historicalPairings, previousRounds);
 
+    // Nicht-lineare Strafe für unausgeglichene Spiele (Blowout-Schutz):
+    // Eine Differenz von 0-2 Punkten ist gut spielbar und ausgeglichen.
+    // Ab 3 wird es merklich unausgeglichen, ab 4+ ist es ein deutlicher Blowout (z.B. 12 vs 6).
+    // Ein Blowout darf niemals einer ausgeglichenen Paarung (Differenz <= 2)
+    // vorgezogen werden, nur um einen Partnerwechsel zu erzwingen.
+    let balancePenalty = 0;
+    if (skillDiff <= 1) {
+      balancePenalty = skillDiff * 20;
+    } else if (skillDiff <= 2) {
+      balancePenalty = 45;
+    } else if (skillDiff === 3) {
+      balancePenalty = 110;
+    } else {
+      // Ab Differenz 4 wächst die Strafe drastisch quadratisch (diff 4 -> 370, diff 5 -> 695, diff 6 -> 1150)
+      balancePenalty = 110 + Math.pow(skillDiff - 2, 2) * 65;
+    }
+
     let cost = 0;
     if (roundType === 'peer') {
       // Im Peer-Modus zählt vor allem die Balance auf dem Feld
-      cost = skillDiff * 30 + historyPenalty;
+      cost = balancePenalty * 1.5 + historyPenalty;
     } else {
-      // Im Social Mix: Historie und Abwechslung wiegen deutlich schwerer
-      cost = skillDiff * 15 + historyPenalty * 1.5;
+      // Im Social Mix: Historie und Balance im Einklang
+      cost = balancePenalty + historyPenalty;
     }
 
     if (cost < lowestCost || bestMatch === null) {
@@ -383,6 +400,126 @@ function generateMentorMatches(
 }
 
 /**
+ * Erzeugt ausgewogene, abwechslungsreiche Social-Mix-Paarungen für Runde 3.
+ * - Teilt Spieler in 4 Stärke-Quartile (Tier 1 bis 4) auf, sodass jedes Feld 
+ *   eine ausgewogene Mischung aus starken, mittleren und schwächeren Spielern hat.
+ * - Vermeidet gezielt Kollisionen mit den Paarungen aus Runde 2 (Mentor-Runde):
+ *   Spieler, die in Runde 2 bereits zusammen gespielt haben, werden nicht erneut
+ *   auf dasselbe Feld gelost, sondern erhalten frische Spielpartner.
+ * - Garantiert absolut ausgeglichene Matches ohne Blowouts.
+ */
+function generateSocialMatches(
+  roundNumber: number,
+  players: Player[],
+  courtCount: number,
+  historicalPairings: HistoricalPairing[],
+  previousRounds: RoundPlan[]
+): Match[] {
+  if (courtCount <= 1) {
+    const four = players.slice(0, 4) as [Player, Player, Player, Player];
+    return [
+      findBestCourtMatch(roundNumber, 1, four, 'social', historicalPairings, previousRounds)
+    ];
+  }
+
+  const sorted = [...players].sort((a, b) => b.skill - a.skill);
+  // Wir unterteilen in 4 Quartile zu je courtCount Spielern
+  const tier1 = sorted.slice(0, courtCount); // Stärkste
+  const tier2 = sorted.slice(courtCount, courtCount * 2); // Gehobenes Mittelfeld
+  const tier3 = sorted.slice(courtCount * 2, courtCount * 3); // Unteres Mittelfeld
+  const tier4 = sorted.slice(courtCount * 3, courtCount * 4); // Einsteiger/Schwächere
+
+  // Helfer: Historische Partnerschafts-Strafe zwischen zwei Spielern berechnen
+  const getPairPenalty = (pA: Player, pB: Player): number => {
+    let penalty = 0;
+    for (const pr of previousRounds) {
+      for (const m of pr.matches) {
+        const isPartner =
+          (m.team1.player1.id === pA.id && m.team1.player2.id === pB.id) ||
+          (m.team1.player1.id === pB.id && m.team1.player2.id === pA.id) ||
+          (m.team2.player1.id === pA.id && m.team2.player2.id === pB.id) ||
+          (m.team2.player1.id === pB.id && m.team2.player2.id === pA.id);
+        if (isPartner) penalty += 150;
+      }
+    }
+    for (const hp of historicalPairings) {
+      if (hp.partnerMap[pA.id] === pB.id || hp.partnerMap[pB.id] === pA.id) {
+        penalty += 40;
+      }
+    }
+    return penalty;
+  };
+
+  // Bestücke jedes Feld mit 1x Tier 1, 1x Tier 4 (frischer Partner), 1x Tier 2, 1x Tier 3
+  const availableTier4 = [...tier4];
+  const availableTier2 = [...tier2];
+  const availableTier3 = [...tier3];
+
+  const courtGroups: [Player, Player, Player, Player][] = [];
+
+  for (let c = 0; c < courtCount; c++) {
+    const pStrong = tier1[c];
+
+    // Wähle Tier 4 Spieler mit geringster Partner-Strafe mit pStrong
+    let bestT4Idx = 0;
+    let minT4Penalty = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < availableTier4.length; i++) {
+      const pen = getPairPenalty(pStrong, availableTier4[i]);
+      if (pen < minT4Penalty) {
+        minT4Penalty = pen;
+        bestT4Idx = i;
+      }
+    }
+    const pWeak = availableTier4.splice(bestT4Idx, 1)[0];
+
+    // Wähle Tier 2 Spieler mit geringster Strafe
+    let bestT2Idx = 0;
+    let minT2Penalty = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < availableTier2.length; i++) {
+      const pen = getPairPenalty(pStrong, availableTier2[i]) + getPairPenalty(pWeak, availableTier2[i]);
+      if (pen < minT2Penalty) {
+        minT2Penalty = pen;
+        bestT2Idx = i;
+      }
+    }
+    const pMidA = availableTier2.splice(bestT2Idx, 1)[0];
+
+    // Wähle Tier 3 Spieler mit geringster Strafe
+    let bestT3Idx = 0;
+    let minT3Penalty = Number.MAX_SAFE_INTEGER;
+    for (let i = 0; i < availableTier3.length; i++) {
+      const pen =
+        getPairPenalty(pStrong, availableTier3[i]) +
+        getPairPenalty(pWeak, availableTier3[i]) +
+        getPairPenalty(pMidA, availableTier3[i]);
+      if (pen < minT3Penalty) {
+        minT3Penalty = pen;
+        bestT3Idx = i;
+      }
+    }
+    const pMidB = availableTier3.splice(bestT3Idx, 1)[0];
+
+    courtGroups.push([pStrong, pWeak, pMidA, pMidB]);
+  }
+
+  const matches: Match[] = [];
+  for (let c = 0; c < courtCount; c++) {
+    const courtNumber = c + 1;
+    const match = findBestCourtMatch(
+      roundNumber,
+      courtNumber,
+      courtGroups[c],
+      'social',
+      historicalPairings,
+      previousRounds
+    );
+    matches.push(match);
+  }
+
+  return matches;
+}
+
+/**
  * Generiert die Paarungen für eine einzelne Runde (Runde 1, 2 oder 3)
  */
 export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
@@ -533,38 +670,17 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
       );
     } else {
       // -------------------------------------------------------------
-      // MODUS: SOZIALER MIX (Felderübergreifende Snake-Durchmischung)
+      // MODUS: SOZIALER MIX (Abwechslungsreich & Ausgeglichen)
       // -------------------------------------------------------------
-      const sorted = [...poolForDoubles].sort((a, b) => b.skill - a.skill);
-      const courtBuckets: Player[][] = Array.from({ length: maxPossibleDoublesCourts }, () => []);
-
-      let cIdx = 0;
-      let dir = 1;
-      for (const p of sorted) {
-        courtBuckets[cIdx].push(p);
-        cIdx += dir;
-        if (cIdx >= maxPossibleDoublesCourts) {
-          cIdx = maxPossibleDoublesCourts - 1;
-          dir = -1;
-        } else if (cIdx < 0) {
-          cIdx = 0;
-          dir = 1;
-        }
-      }
-
-      for (let c = 0; c < maxPossibleDoublesCourts; c++) {
-        const courtNumber = c + 1;
-        const four = courtBuckets[c] as [Player, Player, Player, Player];
-        const match = findBestCourtMatch(
+      matches.push(
+        ...generateSocialMatches(
           roundNumber,
-          courtNumber,
-          four,
-          'social',
+          poolForDoubles,
+          maxPossibleDoublesCourts,
           historicalPairings,
           previousRoundsCurrentSession
-        );
-        matches.push(match);
-      }
+        )
+      );
     }
   }
 

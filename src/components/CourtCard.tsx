@@ -50,6 +50,10 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match }) => {
             <span className="flex items-center gap-1 text-[11px] bg-emerald-500/30 text-emerald-100 px-2 py-0.5 rounded-full font-medium">
               <Sparkles className="w-3 h-3" /> Mentor-Doppel
             </span>
+          ) : roundType === 'social' ? (
+            <span className="flex items-center gap-1 text-[11px] bg-teal-500/30 text-teal-100 px-2 py-0.5 rounded-full font-medium">
+              <Sparkles className="w-3 h-3" /> Sozialer Mix
+            </span>
           ) : (
             <span className="text-[11px] bg-emerald-500/30 text-emerald-100 px-2 py-0.5 rounded-full font-medium">
               Niveau-Gleich

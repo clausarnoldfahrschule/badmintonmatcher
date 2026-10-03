@@ -378,6 +378,52 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     }
   });
 
+  it('Runde 3 Social Mix: Garantiert ausgeglichene Matches (keine Blowouts wie 12 vs 6)', () => {
+    // 16 Demo-Spieler mit breitem Stärkespektrum (Skills 2 bis 9)
+    const sixteenPlayers: Player[] = [
+      { id: 'p1', name: 'Alex M.', skill: 9, isActive: true, createdAt: 1 },
+      { id: 'p2', name: 'Bastian K.', skill: 8, isActive: true, createdAt: 2 },
+      { id: 'p3', name: 'Christian W.', skill: 8, isActive: true, createdAt: 3 },
+      { id: 'p4', name: 'Dirk S.', skill: 7, isActive: true, createdAt: 4 },
+      { id: 'p5', name: 'Elena R.', skill: 7, isActive: true, createdAt: 5 },
+      { id: 'p6', name: 'Fabian H.', skill: 6, isActive: true, createdAt: 6 },
+      { id: 'p7', name: 'Gregor B.', skill: 6, isActive: true, createdAt: 7 },
+      { id: 'p8', name: 'Hanna L.', skill: 5, isActive: true, createdAt: 8 },
+      { id: 'p9', name: 'Ines T.', skill: 5, isActive: true, createdAt: 9 },
+      { id: 'p10', name: 'Jan P.', skill: 4, isActive: true, createdAt: 10 },
+      { id: 'p11', name: 'Klaus D.', skill: 4, isActive: true, createdAt: 11 },
+      { id: 'p12', name: 'Laura M.', skill: 3, isActive: true, createdAt: 12 },
+      { id: 'p13', name: 'Markus V.', skill: 3, isActive: true, createdAt: 13 },
+      { id: 'p14', name: 'Nina K.', skill: 3, isActive: true, createdAt: 14 },
+      { id: 'p15', name: 'Oliver F.', skill: 2, isActive: true, createdAt: 15 },
+      { id: 'p16', name: 'Petra G.', skill: 2, isActive: true, createdAt: 16 }
+    ];
+
+    const att = sixteenPlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    // Teste mit 16 Spielern
+    const session16 = generateFullSession(sixteenPlayers, att, { trainerAvailable: false, trainerSkill: 7 });
+    for (const match of session16.rounds[2].matches) {
+      // Differenz darf auf keinem Feld mehr als 3 betragen (kein Blowout)
+      expect(match.skillDiff).toBeLessThanOrEqual(3);
+    }
+
+    // Teste mit 15 Spielern + Trainer-Joker (exakt das Szenario aus dem Benutzer-Screenshot)
+    const fifteenPlayers = sixteenPlayers.slice(0, 15);
+    const att15 = fifteenPlayers.reduce((acc, p) => {
+      acc[p.id] = { round1: true, round2: true, round3: true };
+      return acc;
+    }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+    const session15 = generateFullSession(fifteenPlayers, att15, { trainerAvailable: true, trainerSkill: 7 });
+    for (const match of session15.rounds[2].matches) {
+      expect(match.skillDiff).toBeLessThanOrEqual(3);
+    }
+  });
+
   it('Stabilitätstest: generateFullSession darf für keine Spieleranzahl (0 bis 16) abstürzen', () => {
     for (let k = 0; k <= 16; k++) {
       const subset = mockPlayers.slice(0, k);
