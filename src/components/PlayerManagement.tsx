@@ -1,23 +1,37 @@
 import { useState } from 'react';
-import { Player } from '../types';
-import { Plus, Search, Edit3, Trash2, UserCheck, UserX, X } from 'lucide-react';
+import { Player, SkillProposal } from '../types';
+import { Plus, Search, Edit3, Trash2, UserCheck, UserX, X, RotateCcw, Sparkles } from 'lucide-react';
+import { getEffectiveSkill } from '../services/pairingEngine';
+import {
+  generateSkillProposals,
+  applySkillAdjustment,
+  dismissSkillProposal,
+  resetPlayerSkillToBaseline
+} from '../services/ratingService';
+import { SkillProposalModal } from './SkillProposalModal';
 
 interface PlayerManagementProps {
   players: Player[];
   onAddPlayer: (player: Omit<Player, 'id' | 'createdAt'>) => void;
   onUpdatePlayer: (player: Player) => void;
   onDeletePlayer: (id: string) => void;
+  onUpdatePlayers?: (players: Player[]) => void;
 }
 
 export const PlayerManagement: React.FC<PlayerManagementProps> = ({
   players,
   onAddPlayer,
   onUpdatePlayer,
-  onDeletePlayer
+  onDeletePlayer,
+  onUpdatePlayers
 }) => {
   const [search, setSearch] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+
+  // Vorschläge zur Stärke-Anpassung
+  const [isProposalModalOpen, setIsProposalModalOpen] = useState<boolean>(false);
+  const proposals = generateSkillProposals(players);
 
   // Form State
   const [name, setName] = useState<string>('');
@@ -30,8 +44,37 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
 
   const activeCount = players.filter(p => p.isActive).length;
   const avgSkill = players.length
-    ? Math.round((players.reduce((sum, p) => sum + p.skill, 0) / players.length) * 10) / 10
+    ? Math.round((players.reduce((sum, p) => sum + getEffectiveSkill(p), 0) / players.length) * 10) / 10
     : 0;
+
+  const handleApplyProposal = (player: Player, newAdjustment: number) => {
+    const updated = applySkillAdjustment(player, newAdjustment);
+    if (onUpdatePlayers) {
+      onUpdatePlayers(players.map(p => (p.id === player.id ? updated : p)));
+    } else {
+      onUpdatePlayer(updated);
+    }
+  };
+
+  const handleDismissProposal = (player: Player) => {
+    const updated = dismissSkillProposal(player);
+    if (onUpdatePlayers) {
+      onUpdatePlayers(players.map(p => (p.id === player.id ? updated : p)));
+    } else {
+      onUpdatePlayer(updated);
+    }
+  };
+
+  const handleApplyAllProposals = (propsToApply: SkillProposal[]) => {
+    if (!onUpdatePlayers) return;
+    let list = [...players];
+    for (const prop of propsToApply) {
+      const updated = applySkillAdjustment(prop.player, prop.targetAdjustment);
+      list = list.map(p => (p.id === prop.player.id ? updated : p));
+    }
+    onUpdatePlayers(list);
+    setIsProposalModalOpen(false);
+  };
 
   const handleOpenAdd = () => {
     setEditingPlayer(null);
@@ -80,6 +123,32 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
 
   return (
     <div className="space-y-5 pb-12">
+      {/* Vorschläge zur Spielstärken-Anpassung Banner */}
+      {proposals.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 rounded-3xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-600 text-white rounded-2xl shadow-xs">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {proposals.length} Vorschlag zur Spielstärke-Anpassung verfügbar!
+              </h3>
+              <p className="text-xs text-slate-600">
+                Basierend auf den Rundenergebnissen über die letzten Wochen.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsProposalModalOpen(true)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+          >
+            Vorschläge ansehen
+          </button>
+        </div>
+      )}
+
       {/* Header & Stats */}
       <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -174,7 +243,29 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
                     : 'bg-amber-100 text-amber-700'
                 }`}>
                   Stärke {player.skill}
+                  {player.skillAdjustment && Math.abs(player.skillAdjustment) >= 0.1 ? (
+                    <span className="text-[10px] ml-1 font-bold opacity-90">
+                      ({player.skillAdjustment > 0 ? `+${player.skillAdjustment}` : player.skillAdjustment})
+                    </span>
+                  ) : null}
                 </span>
+
+                {player.skillAdjustment && Math.abs(player.skillAdjustment) >= 0.1 ? (
+                  <button
+                    onClick={() => {
+                      const updated = resetPlayerSkillToBaseline(player);
+                      if (onUpdatePlayers) {
+                        onUpdatePlayers(players.map(p => (p.id === player.id ? updated : p)));
+                      } else {
+                        onUpdatePlayer(updated);
+                      }
+                    }}
+                    className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition"
+                    title={`Korrektur (${player.skillAdjustment > 0 ? '+' : ''}${player.skillAdjustment}) auf Trainer-Basiswert (${player.skill}) zurücksetzen`}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                ) : null}
 
                 <button
                   onClick={() => handleOpenEdit(player)}
@@ -287,6 +378,16 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* Vorschlags-Modal zur Spielstärken-Freigabe */}
+      <SkillProposalModal
+        isOpen={isProposalModalOpen}
+        onClose={() => setIsProposalModalOpen(false)}
+        proposals={proposals}
+        onApplyProposal={handleApplyProposal}
+        onDismissProposal={handleDismissProposal}
+        onApplyAll={handleApplyAllProposals}
+      />
     </div>
   );
 };

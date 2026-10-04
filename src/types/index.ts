@@ -11,10 +11,55 @@
  */
 export type SkillLevel = number; // 1 bis 10
 
+export interface MatchScore {
+  set1Team1: number;
+  set1Team2: number;
+  set2Team1: number;
+  set2Team2: number;
+}
+
+/**
+ * Einzelner Evidenz-Eintrag aus einem gespielten Match in Runde 1
+ */
+export interface MatchEvidenceRecord {
+  date: string;
+  partnerId: string;
+  opponentIds: [string, string];
+  pointDiff: number; // Team-Punkte Differenz (aus Sicht dieses Spielers)
+  calculatedDiff: number; // Rechnerische Stärkedifferenz (aus Sicht dieses Spielers)
+  observedSignal: number; // o (-2, -1, 0, 1, 2)
+  expectedSignal: number; // e (-2 bis 2)
+  surpriseSignal: number; // S = o - e
+}
+
+/**
+ * Im Hintergrund gesammelte Indizien für die Spielstärke eines Spielers
+ */
+export interface PlayerEvidence {
+  records: MatchEvidenceRecord[];
+}
+
+/**
+ * Vorschlag zur sanften Anpassung der Spielstärke zur Freigabe durch den Trainer
+ */
+export interface SkillProposal {
+  player: Player;
+  currentSkill: number;
+  currentAdjustment: number;
+  proposedDelta: number; // z.B. +0.3 oder -0.3
+  targetAdjustment: number;
+  newEffectiveSkill: number;
+  qualifyingMatchCount: number;
+  uniquePartnerCount: number;
+  reason: string;
+}
+
 export interface Player {
   id: string;
   name: string;
-  skill: SkillLevel; // 1 - 10
+  skill: SkillLevel; // 1 - 10 (Trainer-Basiswert)
+  skillAdjustment?: number; // Sanfte Korrektur (z.B. +0.3, max ±1.5)
+  evidence?: PlayerEvidence;
   isActive: boolean; // Aktives Mitglied oder pausierend
   createdAt: number;
 }
@@ -51,6 +96,7 @@ export interface Match {
   team2: Team;
   roundType: 'peer' | 'mentor' | 'social'; // Peer = Starke mit Starken, Mentor = Stark+Schwach
   skillDiff: number; // Differenz der Team-Gesamtstärken (sollte minimal sein)
+  score?: MatchScore; // Optionales Ergebnis (vor allem für Runde 1)
 }
 
 /**
@@ -96,6 +142,7 @@ export interface HistoricalPairing {
   roundNumber: number;
   partnerMap: Record<string, string>; // playerId -> partnerPlayerId
   opponentsMap: Record<string, string[]>; // playerId -> opponentPlayerIds
+  scoresMap?: Record<string, MatchScore>; // Optional gespeicherte Ergebnisse
 }
 
 /**

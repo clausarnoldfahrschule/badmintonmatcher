@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
-import { Player, SessionPlan, HistoricalPairing } from '../types';
+import { Player, SessionPlan, HistoricalPairing, MatchScore, SkillProposal, RoundPlan } from '../types';
 import { generateFullSession, generateRoundPlan, sessionPlanToHistoricalPairings } from '../services/pairingEngine';
 import { loadHistory, saveHistory, loadActiveSession, saveActiveSession, clearActiveSession } from '../services/storage';
+import {
+  accumulateSessionEvidence,
+  generateSkillProposals,
+  applySkillAdjustment,
+  dismissSkillProposal
+} from '../services/ratingService';
 import { CourtCard } from './CourtCard';
 import { SinglesCourtCard } from './SinglesCourtCard';
 import { DropoutModal } from './DropoutModal';
+import { SkillProposalModal } from './SkillProposalModal';
 import {
   Play,
   AlertTriangle,
@@ -13,22 +20,35 @@ import {
   Check,
   CheckCircle2,
   BookmarkPlus,
-  RotateCcw
+  RotateCcw,
+  Sparkles
 } from 'lucide-react';
 
 interface TrainingViewProps {
   players: Player[];
   trainerSkill: number;
   onUpdateTrainerSkill: (skill: number) => void;
+  onUpdatePlayers?: (players: Player[]) => void;
 }
 
 export const TrainingView: React.FC<TrainingViewProps> = ({
   players,
   trainerSkill,
-  onUpdateTrainerSkill
+  onUpdateTrainerSkill,
+  onUpdatePlayers
 }) => {
   const planRef = useRef<HTMLDivElement>(null);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
+
+  // Vorschläge zur Spielstärken-Anpassung
+  const [pendingProposals, setPendingProposals] = useState<SkillProposal[]>(() =>
+    generateSkillProposals(players)
+  );
+  const [isProposalModalOpen, setIsProposalModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    setPendingProposals(generateSkillProposals(players));
+  }, [players]);
 
   // Gespeicherten Zwischenstand aus vorheriger Sitzung (z.B. nach Browser-Refresh) laden
   const savedSession = useRef(loadActiveSession()).current;
@@ -151,6 +171,54 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     }, 60);
   };
 
+  const handleUpdateMatchScore = (matchId: string, score: MatchScore | undefined) => {
+    if (!sessionPlan) return;
+    const newRounds = [...sessionPlan.rounds] as [RoundPlan, RoundPlan, RoundPlan];
+    const r1 = newRounds[0];
+    const updatedMatches = r1.matches.map(m => (m.id === matchId ? { ...m, score } : m));
+    newRounds[0] = { ...r1, matches: updatedMatches };
+
+    setSessionPlan({
+      ...sessionPlan,
+      rounds: newRounds
+    });
+    setSessionSaved(false);
+  };
+
+  const handleApplyProposal = (player: Player, newAdjustment: number) => {
+    const updated = applySkillAdjustment(player, newAdjustment);
+    if (onUpdatePlayers) {
+      const updatedList = players.map(p => (p.id === player.id ? updated : p));
+      onUpdatePlayers(updatedList);
+      const remaining = generateSkillProposals(updatedList);
+      setPendingProposals(remaining);
+      if (remaining.length === 0) setIsProposalModalOpen(false);
+    }
+  };
+
+  const handleDismissProposal = (player: Player) => {
+    const updated = dismissSkillProposal(player);
+    if (onUpdatePlayers) {
+      const updatedList = players.map(p => (p.id === player.id ? updated : p));
+      onUpdatePlayers(updatedList);
+      const remaining = generateSkillProposals(updatedList);
+      setPendingProposals(remaining);
+      if (remaining.length === 0) setIsProposalModalOpen(false);
+    }
+  };
+
+  const handleApplyAllProposals = (propsToApply: SkillProposal[]) => {
+    if (!onUpdatePlayers) return;
+    let list = [...players];
+    for (const prop of propsToApply) {
+      const updated = applySkillAdjustment(prop.player, prop.targetAdjustment);
+      list = list.map(p => (p.id === prop.player.id ? updated : p));
+    }
+    onUpdatePlayers(list);
+    setPendingProposals([]);
+    setIsProposalModalOpen(false);
+  };
+
   const handleSaveSession = () => {
     if (!sessionPlan) return;
     const newPairings = sessionPlanToHistoricalPairings(sessionPlan);
@@ -158,6 +226,17 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     saveHistory(updatedHistory);
     setHistory(updatedHistory);
     setSessionSaved(true);
+
+    // Evidenz aus Runde 1 akkumulieren
+    if (onUpdatePlayers) {
+      const updatedPlayers = accumulateSessionEvidence(players, sessionPlan.rounds[0], sessionPlan.date);
+      onUpdatePlayers(updatedPlayers);
+      const props = generateSkillProposals(updatedPlayers);
+      setPendingProposals(props);
+      if (props.length > 0) {
+        setIsProposalModalOpen(true);
+      }
+    }
   };
 
   const handleResetSession = () => {
@@ -222,6 +301,32 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Vorschläge zur Spielstärken-Anpassung Banner */}
+      {pendingProposals.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 rounded-3xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-600 text-white rounded-2xl shadow-xs">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {pendingProposals.length} Vorschlag zur Spielstärke-Anpassung verfügbar!
+              </h3>
+              <p className="text-xs text-slate-600">
+                Aus den Ergebnissen in Runde 1 über mehrere Trainingswochen.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsProposalModalOpen(true)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm"
+          >
+            Vorschläge ansehen
+          </button>
+        </div>
+      )}
+
       {/* Check-In & Konfigurations-Bereich */}
       <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -480,7 +585,11 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
           {/* Spielfelder Grid (Doppel + optionales 1vs1 Einzel) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {currentRound.matches.map(match => (
-              <CourtCard key={match.id} match={match} />
+              <CourtCard
+                key={match.id}
+                match={match}
+                onUpdateScore={activeRoundTab === 1 ? handleUpdateMatchScore : undefined}
+              />
             ))}
 
             {currentRound.singlesMatch && (
@@ -547,6 +656,16 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         activeRound={activeRoundTab}
         attendanceMap={attendance}
         onConfirmDropout={handleConfirmDropout}
+      />
+
+      {/* Vorschlags-Modal zur Spielstärken-Freigabe */}
+      <SkillProposalModal
+        isOpen={isProposalModalOpen}
+        onClose={() => setIsProposalModalOpen(false)}
+        proposals={pendingProposals}
+        onApplyProposal={handleApplyProposal}
+        onDismissProposal={handleDismissProposal}
+        onApplyAll={handleApplyAllProposals}
       />
     </div>
   );

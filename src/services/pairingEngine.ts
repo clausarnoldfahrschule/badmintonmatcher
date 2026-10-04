@@ -115,10 +115,22 @@ export function calculateHistoryPenalty(
 }
 
 /**
+ * Ermittelt die wirksame Spielstärke eines Spielers unter Berücksichtigung
+ * von Trainer-Basiswert und sanfter Langzeit-Korrektur (skillAdjustment).
+ * Liefert einen auf 1 Nachkommastelle gerundeten Wert zwischen 1 und 10.
+ */
+export function getEffectiveSkill(player: Player): number {
+  const base = player.skill;
+  const adj = player.skillAdjustment ?? 0;
+  const eff = Math.max(1, Math.min(10, base + adj));
+  return Math.round(eff * 10) / 10;
+}
+
+/**
  * Erzeugt ein Team aus zwei Spielern inklusive Stärke-Berechnung
  */
 export function createTeam(p1: Player, p2: Player): Team {
-  const total = p1.skill + p2.skill;
+  const total = Math.round((getEffectiveSkill(p1) + getEffectiveSkill(p2)) * 10) / 10;
   return {
     player1: p1,
     player2: p2,
@@ -180,7 +192,7 @@ export function findBestCourtMatchWithCost(
 
     // Im Mentor-Modus MUSS jedes Team aus einem stärkeren und einem schwächeren Spieler bestehen
     if (roundType === 'mentor') {
-      const sortedBySkill = [...fourPlayers].sort((a, b) => b.skill - a.skill);
+      const sortedBySkill = [...fourPlayers].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
       const strongIds = new Set([sortedBySkill[0].id, sortedBySkill[1].id]);
       const t1HasStrong = strongIds.has(p1.id) || strongIds.has(p2.id);
       const t1HasWeak = !strongIds.has(p1.id) || !strongIds.has(p2.id);
@@ -301,7 +313,7 @@ function selectSinglesPlayers(
   // Im Peer-Modus (Niveau-Gleichheit): Die beiden Spieler am unteren Ende der Rangliste
   // bilden das Zusatzfeld, damit die stärkeren Spieler auf den vorderen Feldern Doppel spielen
   if (roundType === 'peer') {
-    const sorted = [...candidates].sort((a, b) => b.skill - a.skill);
+    const sorted = [...candidates].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
     return [sorted[sorted.length - 2], sorted[sorted.length - 1]];
   }
 
@@ -336,7 +348,7 @@ function selectSinglesPlayers(
 
   for (let i = 0; i < selectionPool.length; i++) {
     for (let j = i + 1; j < selectionPool.length; j++) {
-      const diff = Math.abs(selectionPool[i].skill - selectionPool[j].skill);
+      const diff = Math.abs(getEffectiveSkill(selectionPool[i]) - getEffectiveSkill(selectionPool[j]));
       if (diff < minDiff) {
         minDiff = diff;
         bestPair = [selectionPool[i], selectionPool[j]];
@@ -365,7 +377,7 @@ function generateMentorMatches(
     ];
   }
 
-  const sorted = [...players].sort((a, b) => b.skill - a.skill);
+  const sorted = [...players].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
   const total = courtCount * 4;
   const half = total / 2;
   const strong = sorted.slice(0, half); // 2 * courtCount Spieler
@@ -473,7 +485,7 @@ function generateSocialMatches(
     ];
   }
 
-  const sorted = [...players].sort((a, b) => b.skill - a.skill);
+  const sorted = [...players].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
   // Start-Aufteilung: Snake über alle Felder
   const courts: [Player, Player, Player, Player][] = Array.from({ length: courtCount }, () => [] as any);
   let cIdx = 0;
@@ -619,7 +631,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
       // Ein reines Einzel zwischen zwei Anfängern ist unüblich.
       // Wenn der Trainer verfügbar ist UND noch nicht im Doppel eingesetzt wurde,
       // spielt er alleine gegen die zwei Anfänger (1 vs. 2 Trainer-Challenge)!
-      const bothBeginners = s1.skill <= 3 && s2.skill <= 3;
+      const bothBeginners = getEffectiveSkill(s1) <= 3 && getEffectiveSkill(s2) <= 3;
 
       if (bothBeginners && trainerAvailable && !trainerParticipated) {
         const trainer = getTrainerPlayer(trainerSkill);
@@ -631,7 +643,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
           player1: trainer,
           player2: s1,
           player3: s2,
-          skillDiff: Math.abs(trainer.skill - (s1.skill + s2.skill))
+          skillDiff: Math.abs(trainer.skill - (getEffectiveSkill(s1) + getEffectiveSkill(s2)))
         };
       } else {
         singlesMatch = {
@@ -640,7 +652,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
           isTrainerChallenge: false,
           player1: s1,
           player2: s2,
-          skillDiff: Math.abs(s1.skill - s2.skill)
+          skillDiff: Math.abs(getEffectiveSkill(s1) - getEffectiveSkill(s2))
         };
       }
 
@@ -657,7 +669,7 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
       // MODUS: NIVEAU-GLEICHHEIT (Homogen)
       // Starke mit Starken, Schwächere mit Schwächeren
       // -------------------------------------------------------------
-      const sorted = [...poolForDoubles].sort((a, b) => b.skill - a.skill);
+      const sorted = [...poolForDoubles].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
 
       for (let c = 0; c < maxPossibleDoublesCourts; c++) {
         const courtNumber = c + 1;
@@ -811,11 +823,19 @@ export function sessionPlanToHistoricalPairings(plan: SessionPlan): HistoricalPa
       }
     }
 
+    const scoresMap: Record<string, import('../types').MatchScore> = {};
+    for (const match of round.matches) {
+      if (match.score) {
+        scoresMap[match.id] = match.score;
+      }
+    }
+
     pairings.push({
       date: plan.date,
       roundNumber: round.roundNumber,
       partnerMap,
-      opponentsMap
+      opponentsMap,
+      scoresMap: Object.keys(scoresMap).length > 0 ? scoresMap : undefined
     });
   }
 

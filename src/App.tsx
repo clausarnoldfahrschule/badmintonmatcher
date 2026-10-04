@@ -22,6 +22,11 @@ export default function App() {
     setTrainerSkill(loadTrainerSkill());
   };
 
+  const handleUpdatePlayers = (updatedPlayers: Player[]) => {
+    savePlayers(updatedPlayers);
+    setPlayers(updatedPlayers);
+  };
+
   const handleAddPlayer = (newPlayerData: Omit<Player, 'id' | 'createdAt'>) => {
     const newPlayer: Player = {
       ...newPlayerData,
@@ -67,6 +72,7 @@ export default function App() {
             players={players}
             trainerSkill={trainerSkill}
             onUpdateTrainerSkill={handleUpdateTrainerSkill}
+            onUpdatePlayers={handleUpdatePlayers}
           />
         )}
 
@@ -76,6 +82,7 @@ export default function App() {
             onAddPlayer={handleAddPlayer}
             onUpdatePlayer={handleUpdatePlayer}
             onDeletePlayer={handleDeletePlayer}
+            onUpdatePlayers={handleUpdatePlayers}
           />
         )}
 
