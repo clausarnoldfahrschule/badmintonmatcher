@@ -128,16 +128,37 @@ export function createTeam(p1: Player, p2: Player): Team {
 }
 
 /**
- * Bestimmt die optimale 2vs2-Aufteilung aus 4 Spielern für ein Feld
+ * Berechnet eine stetige, streng monoton steigende Strafpunkte für Stärkedifferenzen (Blowout-Schutz).
+ * - Im Bereich 0 bis 1.0: Sehr flach (0 bis 25 Punkte), Spiele sind praktisch ausgeglichen.
+ * - Im Bereich 1.0 bis 2.0: Moderat (25 bis 60 Punkte), Spiele sind voll wettbewerbsfähig.
+ * - Ab 2.0: Stark progressiv/quadratisch ansteigend, um Blowouts (z. B. Differenz 4+)
+ *   zuverlässig zu verhindern – auch gegenüber Partnerwechsel-Wünschen.
+ * - Funktioniert stetig und sprungfrei für Dezimalwerte (z. B. 2.4).
  */
-export function findBestCourtMatch(
+export function calculateBalancePenalty(skillDiff: number): number {
+  const diff = Math.max(0, skillDiff);
+  if (diff <= 1.0) {
+    return diff * 25;
+  }
+  if (diff <= 2.0) {
+    return 25 + (diff - 1.0) * 35;
+  }
+  const excess = diff - 2.0;
+  return 60 + excess * 50 + excess * excess * 60;
+}
+
+/**
+ * Bestimmt die optimale 2vs2-Aufteilung aus 4 Spielern für ein Feld inklusive Kostenbewertung.
+ * Berücksichtigt für Mentor-Runden das Prinzip: Jedes Team besteht aus 1 stark + 1 schwach.
+ */
+export function findBestCourtMatchWithCost(
   roundNumber: number,
   courtNumber: number,
   fourPlayers: [Player, Player, Player, Player],
-  roundType: 'peer' | 'social',
+  roundType: 'peer' | 'mentor' | 'social',
   historicalPairings: HistoricalPairing[],
   previousRounds: RoundPlan[]
-): Match {
+): { match: Match; cost: number } {
   // Drei Kombinationsmöglichkeiten für 4 Spieler [0, 1, 2, 3]:
   // Option A: (0, 1) vs (2, 3)
   // Option B: (0, 2) vs (1, 3)
@@ -157,36 +178,27 @@ export function findBestCourtMatch(
     const p3 = fourPlayers[t2Indices[0]];
     const p4 = fourPlayers[t2Indices[1]];
 
+    // Im Mentor-Modus MUSS jedes Team aus einem stärkeren und einem schwächeren Spieler bestehen
+    if (roundType === 'mentor') {
+      const sortedBySkill = [...fourPlayers].sort((a, b) => b.skill - a.skill);
+      const strongIds = new Set([sortedBySkill[0].id, sortedBySkill[1].id]);
+      const t1HasStrong = strongIds.has(p1.id) || strongIds.has(p2.id);
+      const t1HasWeak = !strongIds.has(p1.id) || !strongIds.has(p2.id);
+      if (!t1HasStrong || !t1HasWeak) continue;
+    }
+
     const team1 = createTeam(p1, p2);
     const team2 = createTeam(p3, p4);
     const skillDiff = Math.abs(team1.totalSkill - team2.totalSkill);
 
     // Strafpunkte aus der Historie (Wiederholungen vermeiden)
     const historyPenalty = calculateHistoryPenalty(p1, p2, p3, p4, historicalPairings, previousRounds);
-
-    // Nicht-lineare Strafe für unausgeglichene Spiele (Blowout-Schutz):
-    // Eine Differenz von 0-2 Punkten ist gut spielbar und ausgeglichen.
-    // Ab 3 wird es merklich unausgeglichen, ab 4+ ist es ein deutlicher Blowout (z.B. 12 vs 6).
-    // Ein Blowout darf niemals einer ausgeglichenen Paarung (Differenz <= 2)
-    // vorgezogen werden, nur um einen Partnerwechsel zu erzwingen.
-    let balancePenalty = 0;
-    if (skillDiff <= 1) {
-      balancePenalty = skillDiff * 20;
-    } else if (skillDiff <= 2) {
-      balancePenalty = 45;
-    } else if (skillDiff === 3) {
-      balancePenalty = 110;
-    } else {
-      // Ab Differenz 4 wächst die Strafe drastisch quadratisch (diff 4 -> 370, diff 5 -> 695, diff 6 -> 1150)
-      balancePenalty = 110 + Math.pow(skillDiff - 2, 2) * 65;
-    }
+    const balancePenalty = calculateBalancePenalty(skillDiff);
 
     let cost = 0;
     if (roundType === 'peer') {
-      // Im Peer-Modus zählt vor allem die Balance auf dem Feld
       cost = balancePenalty * 1.5 + historyPenalty;
     } else {
-      // Im Social Mix: Historie und Balance im Einklang
       cost = balancePenalty + historyPenalty;
     }
 
@@ -203,7 +215,28 @@ export function findBestCourtMatch(
     }
   }
 
-  return bestMatch!;
+  return { match: bestMatch!, cost: lowestCost };
+}
+
+/**
+ * Bestimmt die optimale 2vs2-Aufteilung aus 4 Spielern für ein Feld
+ */
+export function findBestCourtMatch(
+  roundNumber: number,
+  courtNumber: number,
+  fourPlayers: [Player, Player, Player, Player],
+  roundType: 'peer' | 'mentor' | 'social',
+  historicalPairings: HistoricalPairing[],
+  previousRounds: RoundPlan[]
+): Match {
+  return findBestCourtMatchWithCost(
+    roundNumber,
+    courtNumber,
+    fourPlayers,
+    roundType,
+    historicalPairings,
+    previousRounds
+  ).match;
 }
 
 /**
@@ -316,6 +349,7 @@ function selectSinglesPlayers(
 
 /**
  * Erzeugt ausgewogene Mentor-Paare (Stark+Schwach) unter Berücksichtigung von Historien-Strafen
+ * und feldübergreifender Swap-Optimierung zur Vermeidung von Blowouts.
  */
 function generateMentorMatches(
   roundNumber: number,
@@ -324,76 +358,95 @@ function generateMentorMatches(
   historicalPairings: HistoricalPairing[],
   previousRounds: RoundPlan[]
 ): Match[] {
-  const sorted = [...players].sort((a, b) => b.skill - a.skill);
-  const half = sorted.length / 2;
-  const strongHalf = sorted.slice(0, half);
-  const weakHalf = sorted.slice(half);
-
-  // Suche für jeden starken Spieler den besten Partner aus der schwachen Hälfte,
-  // der noch nicht mit ihm gespielt hat (geringste Historien-Strafe)
-  const availableWeak = [...weakHalf];
-  const mentorTeams: Team[] = [];
-
-  for (let i = 0; i < strongHalf.length; i++) {
-    const strong = strongHalf[i];
-    let bestWeakIndex = 0;
-    let lowestPartnerPenalty = Number.MAX_SAFE_INTEGER;
-
-    for (let j = 0; j < availableWeak.length; j++) {
-      const candidateWeak = availableWeak[j];
-      let penalty = 0;
-
-      // Partner in heutigen Vorrunden?
-      for (const pr of previousRounds) {
-        for (const m of pr.matches) {
-          const isPartner =
-            (m.team1.player1.id === strong.id && m.team1.player2.id === candidateWeak.id) ||
-            (m.team1.player1.id === candidateWeak.id && m.team1.player2.id === strong.id) ||
-            (m.team2.player1.id === strong.id && m.team2.player2.id === candidateWeak.id) ||
-            (m.team2.player1.id === candidateWeak.id && m.team2.player2.id === strong.id);
-          if (isPartner) penalty += 150;
-        }
-      }
-
-      // Partner in früheren Wochen?
-      for (const hp of historicalPairings) {
-        if (hp.partnerMap[strong.id] === candidateWeak.id || hp.partnerMap[candidateWeak.id] === strong.id) {
-          penalty += 50;
-        }
-      }
-
-      // Bevorzuge reziproke Sortierung als Tie-Breaker (Stärkster mit Schwächstem)
-      const idealWeakIndex = availableWeak.length - 1 - i;
-      const indexDiff = Math.abs(j - Math.max(0, idealWeakIndex));
-      const totalCost = penalty + indexDiff * 5;
-
-      if (totalCost < lowestPartnerPenalty) {
-        lowestPartnerPenalty = totalCost;
-        bestWeakIndex = j;
-      }
-    }
-
-    const chosenWeak = availableWeak.splice(bestWeakIndex, 1)[0];
-    mentorTeams.push(createTeam(strong, chosenWeak));
+  if (courtCount <= 1) {
+    const four = players.slice(0, 4) as [Player, Player, Player, Player];
+    return [
+      findBestCourtMatch(roundNumber, 1, four, 'mentor', historicalPairings, previousRounds)
+    ];
   }
 
-  // Sortiere Teams nach Gesamtstärke und setze benachbarte Teams auf ein Feld
-  mentorTeams.sort((a, b) => b.totalSkill - a.totalSkill);
+  const sorted = [...players].sort((a, b) => b.skill - a.skill);
+  const total = courtCount * 4;
+  const half = total / 2;
+  const strong = sorted.slice(0, half); // 2 * courtCount Spieler
+  const weak = sorted.slice(half, total); // 2 * courtCount Spieler
+
+  // Start-Aufteilung: Jedes Feld bekommt 2 Strong und 2 Weak mit balancierten Stärkesummen
+  const courts: [Player, Player, Player, Player][] = Array.from({ length: courtCount }, (_, c) => [
+    strong[c],
+    strong[2 * courtCount - 1 - c],
+    weak[c],
+    weak[2 * courtCount - 1 - c]
+  ]);
+
+  // 2-Opt Swap-Optimierung zwischen Feldern:
+  // Strong tauscht mit Strong (Index 0,1), Weak tauscht mit Weak (Index 2,3)
+  // Dies garantiert, dass die Mentor-Bedingung auf jedem Feld streng erhalten bleibt.
+  let improved = true;
+  let itCount = 0;
+  while (improved && itCount < 30) {
+    improved = false;
+    itCount++;
+    for (let c1 = 0; c1 < courtCount; c1++) {
+      for (let c2 = c1 + 1; c2 < courtCount; c2++) {
+        // Tausche Strong (Index 0 oder 1)
+        for (let s1 = 0; s1 < 2; s1++) {
+          for (let s2 = 0; s2 < 2; s2++) {
+            const currentCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+
+            const temp1 = courts[c1][s1];
+            const temp2 = courts[c2][s2];
+            courts[c1][s1] = temp2;
+            courts[c2][s2] = temp1;
+
+            const newCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+
+            if (newCost < currentCost - 0.01) {
+              improved = true;
+            } else {
+              courts[c1][s1] = temp1;
+              courts[c2][s2] = temp2;
+            }
+          }
+        }
+        // Tausche Weak (Index 2 oder 3)
+        for (let w1 = 2; w1 < 4; w1++) {
+          for (let w2 = 2; w2 < 4; w2++) {
+            const currentCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+
+            const temp1 = courts[c1][w1];
+            const temp2 = courts[c2][w2];
+            courts[c1][w1] = temp2;
+            courts[c2][w2] = temp1;
+
+            const newCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+
+            if (newCost < currentCost - 0.01) {
+              improved = true;
+            } else {
+              courts[c1][w1] = temp1;
+              courts[c2][w2] = temp2;
+            }
+          }
+        }
+      }
+    }
+  }
 
   const matches: Match[] = [];
   for (let c = 0; c < courtCount; c++) {
     const courtNumber = c + 1;
-    const team1 = mentorTeams[c * 2];
-    const team2 = mentorTeams[c * 2 + 1];
-
-    matches.push({
-      id: `match-r${roundNumber}-c${courtNumber}-mentor-${team1.player1.id}-${team1.player2.id}-vs-${team2.player1.id}-${team2.player2.id}`,
-      courtNumber,
-      team1,
-      team2,
-      roundType: 'mentor',
-      skillDiff: Math.abs(team1.totalSkill - team2.totalSkill)
-    });
+    matches.push(
+      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'mentor', historicalPairings, previousRounds)
+    );
   }
 
   return matches;
@@ -401,12 +454,10 @@ function generateMentorMatches(
 
 /**
  * Erzeugt ausgewogene, abwechslungsreiche Social-Mix-Paarungen für Runde 3.
- * - Teilt Spieler in 4 Stärke-Quartile (Tier 1 bis 4) auf, sodass jedes Feld 
- *   eine ausgewogene Mischung aus starken, mittleren und schwächeren Spielern hat.
- * - Vermeidet gezielt Kollisionen mit den Paarungen aus Runde 2 (Mentor-Runde):
- *   Spieler, die in Runde 2 bereits zusammen gespielt haben, werden nicht erneut
- *   auf dasselbe Feld gelost, sondern erhalten frische Spielpartner.
- * - Garantiert absolut ausgeglichene Matches ohne Blowouts.
+ * - Startet mit einer feldübergreifenden Schlangen-Verteilung (Snake).
+ * - Führt eine 2-Opt Swap-Optimierung zwischen allen Feldern durch, um das globale
+ *   Optimum aus maximaler Abwechslung (neue Partner/Gegner) und optimaler Spielbalance
+ *   (keine Blowouts) zu finden.
  */
 function generateSocialMatches(
   roundNumber: number,
@@ -423,97 +474,63 @@ function generateSocialMatches(
   }
 
   const sorted = [...players].sort((a, b) => b.skill - a.skill);
-  // Wir unterteilen in 4 Quartile zu je courtCount Spielern
-  const tier1 = sorted.slice(0, courtCount); // Stärkste
-  const tier2 = sorted.slice(courtCount, courtCount * 2); // Gehobenes Mittelfeld
-  const tier3 = sorted.slice(courtCount * 2, courtCount * 3); // Unteres Mittelfeld
-  const tier4 = sorted.slice(courtCount * 3, courtCount * 4); // Einsteiger/Schwächere
+  // Start-Aufteilung: Snake über alle Felder
+  const courts: [Player, Player, Player, Player][] = Array.from({ length: courtCount }, () => [] as any);
+  let cIdx = 0;
+  let dir = 1;
+  for (const p of sorted) {
+    courts[cIdx].push(p);
+    cIdx += dir;
+    if (cIdx >= courtCount) {
+      cIdx = courtCount - 1;
+      dir = -1;
+    } else if (cIdx < 0) {
+      cIdx = 0;
+      dir = 1;
+    }
+  }
 
-  // Helfer: Historische Partnerschafts-Strafe zwischen zwei Spielern berechnen
-  const getPairPenalty = (pA: Player, pB: Player): number => {
-    let penalty = 0;
-    for (const pr of previousRounds) {
-      for (const m of pr.matches) {
-        const isPartner =
-          (m.team1.player1.id === pA.id && m.team1.player2.id === pB.id) ||
-          (m.team1.player1.id === pB.id && m.team1.player2.id === pA.id) ||
-          (m.team2.player1.id === pA.id && m.team2.player2.id === pB.id) ||
-          (m.team2.player1.id === pB.id && m.team2.player2.id === pA.id);
-        if (isPartner) penalty += 150;
+  // 2-Opt Swap-Optimierung zwischen allen Feldern
+  let improved = true;
+  let itCount = 0;
+  while (improved && itCount < 30) {
+    improved = false;
+    itCount++;
+    for (let c1 = 0; c1 < courtCount; c1++) {
+      for (let c2 = c1 + 1; c2 < courtCount; c2++) {
+        for (let p1 = 0; p1 < 4; p1++) {
+          for (let p2 = 0; p2 < 4; p2++) {
+            const currentCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds).cost;
+
+            const temp1 = courts[c1][p1];
+            const temp2 = courts[c2][p2];
+            courts[c1][p1] = temp2;
+            courts[c2][p2] = temp1;
+
+            const newCost =
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds).cost;
+
+            if (newCost < currentCost - 0.01) {
+              improved = true;
+            } else {
+              courts[c1][p1] = temp1;
+              courts[c2][p2] = temp2;
+            }
+          }
+        }
       }
     }
-    for (const hp of historicalPairings) {
-      if (hp.partnerMap[pA.id] === pB.id || hp.partnerMap[pB.id] === pA.id) {
-        penalty += 40;
-      }
-    }
-    return penalty;
-  };
-
-  // Bestücke jedes Feld mit 1x Tier 1, 1x Tier 4 (frischer Partner), 1x Tier 2, 1x Tier 3
-  const availableTier4 = [...tier4];
-  const availableTier2 = [...tier2];
-  const availableTier3 = [...tier3];
-
-  const courtGroups: [Player, Player, Player, Player][] = [];
-
-  for (let c = 0; c < courtCount; c++) {
-    const pStrong = tier1[c];
-
-    // Wähle Tier 4 Spieler mit geringster Partner-Strafe mit pStrong
-    let bestT4Idx = 0;
-    let minT4Penalty = Number.MAX_SAFE_INTEGER;
-    for (let i = 0; i < availableTier4.length; i++) {
-      const pen = getPairPenalty(pStrong, availableTier4[i]);
-      if (pen < minT4Penalty) {
-        minT4Penalty = pen;
-        bestT4Idx = i;
-      }
-    }
-    const pWeak = availableTier4.splice(bestT4Idx, 1)[0];
-
-    // Wähle Tier 2 Spieler mit geringster Strafe
-    let bestT2Idx = 0;
-    let minT2Penalty = Number.MAX_SAFE_INTEGER;
-    for (let i = 0; i < availableTier2.length; i++) {
-      const pen = getPairPenalty(pStrong, availableTier2[i]) + getPairPenalty(pWeak, availableTier2[i]);
-      if (pen < minT2Penalty) {
-        minT2Penalty = pen;
-        bestT2Idx = i;
-      }
-    }
-    const pMidA = availableTier2.splice(bestT2Idx, 1)[0];
-
-    // Wähle Tier 3 Spieler mit geringster Strafe
-    let bestT3Idx = 0;
-    let minT3Penalty = Number.MAX_SAFE_INTEGER;
-    for (let i = 0; i < availableTier3.length; i++) {
-      const pen =
-        getPairPenalty(pStrong, availableTier3[i]) +
-        getPairPenalty(pWeak, availableTier3[i]) +
-        getPairPenalty(pMidA, availableTier3[i]);
-      if (pen < minT3Penalty) {
-        minT3Penalty = pen;
-        bestT3Idx = i;
-      }
-    }
-    const pMidB = availableTier3.splice(bestT3Idx, 1)[0];
-
-    courtGroups.push([pStrong, pWeak, pMidA, pMidB]);
   }
 
   const matches: Match[] = [];
   for (let c = 0; c < courtCount; c++) {
     const courtNumber = c + 1;
-    const match = findBestCourtMatch(
-      roundNumber,
-      courtNumber,
-      courtGroups[c],
-      'social',
-      historicalPairings,
-      previousRounds
+    matches.push(
+      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'social', historicalPairings, previousRounds)
     );
-    matches.push(match);
   }
 
   return matches;

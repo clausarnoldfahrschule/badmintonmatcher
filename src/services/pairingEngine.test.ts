@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateRoundPlan, generateFullSession, TRAINER_ID } from './pairingEngine';
+import { generateRoundPlan, generateFullSession, calculateBalancePenalty, TRAINER_ID } from './pairingEngine';
 import { Player } from '../types';
 
 describe('Pairing Engine (Paarungs-Algorithmus)', () => {
@@ -422,6 +422,76 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
     for (const match of session15.rounds[2].matches) {
       expect(match.skillDiff).toBeLessThanOrEqual(3);
     }
+  });
+
+  it('Balance-Strafe: Ist streng monoton, stetig und dezimalfest', () => {
+    // 0 sollte 0 sein
+    expect(calculateBalancePenalty(0)).toBe(0);
+
+    // Monotonie über feine Dezimalschritte von 0 bis 8
+    let prev = -1;
+    for (let d = 0; d <= 8; d += 0.2) {
+      const pen = calculateBalancePenalty(d);
+      expect(pen).toBeGreaterThanOrEqual(prev);
+      prev = pen;
+    }
+
+    // 2.4 MUSS strikt kleiner sein als 3.0 (Korrektur des ehemaligen Kantenfehlers)
+    expect(calculateBalancePenalty(2.4)).toBeLessThan(calculateBalancePenalty(3.0));
+
+    // Starke progressive Strafe bei Blowouts (Differenz >= 4)
+    expect(calculateBalancePenalty(4)).toBeGreaterThan(300);
+    expect(calculateBalancePenalty(6)).toBeGreaterThan(1000);
+  });
+
+  it('Stresstest Swap-Optimierer: 300 zufällige Spielabende ohne Blowout', () => {
+    // Simuliert 300 heterogene Abende (4 bis 16 Spieler mit Zufallsstärken 1-10)
+    let maxMentorDiff = 0;
+    let maxSocialDiff = 0;
+    let mentorOver3Count = 0;
+    let socialOver3Count = 0;
+    let totalMatches = 0;
+
+    for (let i = 0; i < 300; i++) {
+      const count = 4 + (i % 13); // 4..16 Spieler
+      const testPlayers: Player[] = Array.from({ length: count }, (_, idx) => ({
+        id: `tp-${idx}`,
+        name: `Spieler ${idx}`,
+        skill: ((idx * 7 + i * 3) % 10) + 1, // Streuung 1 bis 10
+        isActive: true,
+        createdAt: idx
+      }));
+
+      const att = testPlayers.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const session = generateFullSession(testPlayers, att, {
+        trainerAvailable: i % 2 === 0,
+        trainerSkill: 7
+      });
+
+      // Runde 2 (Mentor)
+      for (const m of session.rounds[1].matches) {
+        totalMatches++;
+        maxMentorDiff = Math.max(maxMentorDiff, m.skillDiff);
+        if (m.skillDiff > 3) mentorOver3Count++;
+      }
+
+      // Runde 3 (Social)
+      for (const m of session.rounds[2].matches) {
+        maxSocialDiff = Math.max(maxSocialDiff, m.skillDiff);
+        if (m.skillDiff > 3) socialOver3Count++;
+      }
+    }
+
+    // Extrem seltene Abweichungen > 3 (unter 5 % bei rein zufälliger Vollverteilung)
+    expect(mentorOver3Count / totalMatches).toBeLessThan(0.05);
+    expect(socialOver3Count / totalMatches).toBeLessThan(0.05);
+    // Kein Spiel darf einen Differenz-Ausreißer > 5 haben
+    expect(maxMentorDiff).toBeLessThanOrEqual(5);
+    expect(maxSocialDiff).toBeLessThanOrEqual(4);
   });
 
   it('Stabilitätstest: generateFullSession darf für keine Spieleranzahl (0 bis 16) abstürzen', () => {
