@@ -12,6 +12,7 @@ import { CourtCard } from './CourtCard';
 import { SinglesCourtCard } from './SinglesCourtCard';
 import { DropoutModal } from './DropoutModal';
 import { SkillProposalModal } from './SkillProposalModal';
+import { GuestModal } from './GuestModal';
 import {
   Play,
   AlertTriangle,
@@ -21,7 +22,9 @@ import {
   CheckCircle2,
   BookmarkPlus,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  UserPlus,
+  Trash2
 } from 'lucide-react';
 
 interface TrainingViewProps {
@@ -39,6 +42,9 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
 }) => {
   const planRef = useRef<HTMLDivElement>(null);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
+
+  // Gastspieler Modal
+  const [isGuestModalOpen, setIsGuestModalOpen] = useState<boolean>(false);
 
   // Vorschläge zur Spielstärken-Anpassung
   const [pendingProposals, setPendingProposals] = useState<SkillProposal[]>(() =>
@@ -240,16 +246,68 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   };
 
   const handleResetSession = () => {
-    if (window.confirm('Möchtest du den aktuellen Trainingsabend abschließen/zurücksetzen und einen neuen Abend vorbereiten? Der aktuelle Spielplan wird geleert.')) {
+    const guests = players.filter(p => p.isGuest);
+    let promptMsg = 'Möchtest du den aktuellen Trainingsabend abschließen/zurücksetzen und einen neuen Abend vorbereiten? Der aktuelle Spielplan wird geleert.';
+    if (guests.length > 0) {
+      promptMsg += `\n\nHinweis: Es waren ${guests.length} Gastspieler angemeldet. Sollen diese Gastspieler für den neuen Abend entfernt werden?`;
+    }
+
+    if (window.confirm(promptMsg)) {
       clearActiveSession();
       setSessionPlan(null);
       setSessionSaved(false);
       setActiveRoundTab(1);
+
+      // Gäste für den nächsten Abend entfernen
+      const regularPlayers = players.filter(p => !p.isGuest);
+      if (onUpdatePlayers && guests.length > 0) {
+        onUpdatePlayers(regularPlayers);
+      }
+
       const resetAtt: Record<string, { round1: boolean; round2: boolean; round3: boolean }> = {};
-      players.forEach(p => {
+      regularPlayers.forEach(p => {
         resetAtt[p.id] = { round1: p.isActive, round2: p.isActive, round3: p.isActive };
       });
       setAttendance(resetAtt);
+    }
+  };
+
+  const handleAddGuest = (guestData: {
+    name: string;
+    invitedByPlayerId?: string;
+    skill: number;
+    rounds: { round1: boolean; round2: boolean; round3: boolean };
+  }) => {
+    const newGuest: Player = {
+      id: `guest-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name: guestData.name,
+      skill: guestData.skill,
+      isActive: true,
+      isGuest: true,
+      invitedByPlayerId: guestData.invitedByPlayerId,
+      createdAt: Date.now()
+    };
+
+    setAttendance(prev => ({
+      ...prev,
+      [newGuest.id]: guestData.rounds
+    }));
+
+    if (onUpdatePlayers) {
+      onUpdatePlayers([...players, newGuest]);
+    }
+  };
+
+  const handleDeleteGuest = (guestId: string) => {
+    if (window.confirm('Möchtest du diesen Gastspieler wirklich entfernen?')) {
+      if (onUpdatePlayers) {
+        onUpdatePlayers(players.filter(p => p.id !== guestId));
+      }
+      setAttendance(prev => {
+        const copy = { ...prev };
+        delete copy[guestId];
+        return copy;
+      });
     }
   };
 
@@ -353,6 +411,13 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
             >
               Alle aus
             </button>
+            <button
+              onClick={() => setIsGuestModalOpen(true)}
+              className="text-xs font-bold px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg transition flex items-center gap-1.5 shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>+ Gast anmelden</span>
+            </button>
           </div>
         </div>
 
@@ -413,9 +478,104 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
           </div>
         </div>
 
+        {/* Gastspieler Bereich (falls Gäste vorhanden) */}
+        {players.some(p => p.isGuest) && (
+          <div className="bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-3 mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                  <UserPlus className="w-4 h-4 text-indigo-600" />
+                  Gastspieler heute ({players.filter(p => p.isGuest).length})
+                </span>
+              </div>
+              <span className="text-[11px] text-indigo-700/80">
+                Wird vorrangig mit Einlader gepaart • Keine Wertungskorrektur
+              </span>
+            </div>
+            <div className="divide-y divide-indigo-100/80">
+              {players
+                .filter(p => p.isGuest)
+                .map(guest => {
+                  const host = guest.invitedByPlayerId
+                    ? players.find(p => p.id === guest.invitedByPlayerId)
+                    : null;
+                  const att = attendance[guest.id] || { round1: false, round2: false, round3: false };
+                  const isAnyActive = att.round1 || att.round2 || att.round3;
+
+                  return (
+                    <div
+                      key={guest.id}
+                      className="py-2 flex items-center justify-between gap-2 hover:bg-indigo-100/40 px-2 rounded-xl transition"
+                    >
+                      <div
+                        onClick={() => togglePlayerEntirely(guest.id)}
+                        className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                      >
+                        <div
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                            isAnyActive
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {isAnyActive && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-indigo-950 flex items-center gap-2 truncate">
+                            <span>{guest.name}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-200/70 text-indigo-800">
+                              Gast
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-indigo-700/80">
+                            {host ? `Eingeladen von: ${host.name}` : 'Spontan / Ohne Einladung'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 mr-1">
+                          Lv {guest.skill}
+                        </span>
+
+                        {/* Einzelne Runden-Buttons */}
+                        {(['round1', 'round2', 'round3'] as const).map((rKey, idx) => {
+                          const active = att[rKey];
+                          return (
+                            <button
+                              key={rKey}
+                              type="button"
+                              onClick={() => togglePlayerRound(guest.id, rKey)}
+                              className={`text-[11px] font-bold px-2 py-1 rounded-lg border transition ${
+                                active
+                                  ? 'bg-indigo-600 text-white border-indigo-700'
+                                  : 'bg-white text-slate-400 border-slate-200 hover:bg-indigo-50'
+                              }`}
+                            >
+                              R{idx + 1}
+                            </button>
+                          );
+                        })}
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGuest(guest.id)}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition ml-1"
+                          title="Gast entfernen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
         {/* Spielerliste Check-In */}
         <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1">
-          {players.map(player => {
+          {players.filter(p => !p.isGuest).map(player => {
             const att = attendance[player.id] || { round1: false, round2: false, round3: false };
             const isAnyActive = att.round1 || att.round2 || att.round3;
 
@@ -666,6 +826,14 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         onApplyProposal={handleApplyProposal}
         onDismissProposal={handleDismissProposal}
         onApplyAll={handleApplyAllProposals}
+      />
+
+      {/* Gast anmelden Modal */}
+      <GuestModal
+        isOpen={isGuestModalOpen}
+        onClose={() => setIsGuestModalOpen(false)}
+        availableHosts={players.filter(p => !p.isGuest)}
+        onAddGuest={handleAddGuest}
       />
     </div>
   );

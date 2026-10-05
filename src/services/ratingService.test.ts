@@ -101,6 +101,32 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
     expect(res.reason).toContain('Trainer als Joker');
   });
 
+  it('schließt Spiele mit Gastspielern vollständig von der Wertung aus', () => {
+    const p1 = createDummyPlayer('p1', 'Alex', 7);
+    const guest: Player = {
+      id: 'guest-1',
+      name: 'Lukas (Gast)',
+      skill: 6,
+      isActive: true,
+      isGuest: true,
+      invitedByPlayerId: 'p1',
+      createdAt: Date.now()
+    };
+    const p3 = createDummyPlayer('p3', 'Basti', 7);
+    const p4 = createDummyPlayer('p4', 'Dirk', 7);
+
+    const match = createDummyMatch('peer', p1, guest, p3, p4, {
+      set1Team1: 21,
+      set1Team2: 10,
+      set2Team1: 21,
+      set2Team2: 10
+    });
+
+    const res = evaluateMatchScore(match);
+    expect(res.eligible).toBe(false);
+    expect(res.reason).toContain('Gastspielern');
+  });
+
   it('ignoriert unvollständige oder fehlende Ergebnisse', () => {
     const p1 = createDummyPlayer('p1', 'Alex', 7);
     const p2 = createDummyPlayer('p2', 'Jan', 7);

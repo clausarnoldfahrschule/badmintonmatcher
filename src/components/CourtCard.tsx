@@ -19,6 +19,12 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
   const [s2T2, setS2T2] = useState<number>(score?.set2Team2 ?? 15);
 
   const hasScore = score && isScoreComplete(score);
+  const hasGuest = Boolean(
+    team1.player1.isGuest ||
+    team1.player2.isGuest ||
+    team2.player1.isGuest ||
+    team2.player2.isGuest
+  );
 
   const renderPlayer = (player: typeof team1.player1, isTrainer: boolean) => {
     const effSkill = getEffectiveSkill(player);
@@ -31,8 +37,14 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
             <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide">
               Joker
             </span>
+          ) : player.isGuest ? (
+            <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide">
+              Gast
+            </span>
           ) : null}
-          <span className={`text-sm font-semibold truncate ${isTrainer ? 'text-amber-900 font-bold' : 'text-slate-800'}`}>
+          <span className={`text-sm font-semibold truncate ${
+            isTrainer ? 'text-amber-900 font-bold' : player.isGuest ? 'text-indigo-950 font-bold' : 'text-slate-800'
+          }`}>
             {player.name}
           </span>
         </div>
@@ -47,11 +59,13 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
               : 'bg-amber-100 text-amber-700'
           }`}>
             Lv {player.skill}
-            {hasAdjustment && (
+            {player.isGuest ? (
+              <span className="text-[9px] opacity-75 ml-0.5">geschätzt</span>
+            ) : hasAdjustment ? (
               <span className="text-[10px] opacity-80 ml-0.5">
                 ({player.skillAdjustment! > 0 ? `+${player.skillAdjustment}` : player.skillAdjustment})
               </span>
-            )}
+            ) : null}
           </span>
         </div>
       </div>
@@ -173,11 +187,23 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
                       </span>
                     );
                   })()}
+                  {hasGuest && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                      Gastspiel (Wertung pausiert)
+                    </span>
+                  )}
                 </div>
               ) : (
-                <span className="text-xs text-slate-500 font-medium italic">
-                  Kein Ergebnis erfasst (optional)
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium italic">
+                    Kein Ergebnis erfasst (optional)
+                  </span>
+                  {hasGuest && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                      Gastspiel
+                    </span>
+                  )}
+                </div>
               )}
 
               <button
@@ -209,9 +235,16 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
           ) : (
             <div className="space-y-3 pt-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800">
-                  Ergebnis (2 Sätze) eintragen:
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-800">
+                    Ergebnis (2 Sätze) eintragen:
+                  </span>
+                  {hasGuest && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800">
+                      Gastspiel (Wertung pausiert)
+                    </span>
+                  )}
+                </div>
                 <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
                   {diffCategory}
                 </span>

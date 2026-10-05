@@ -21,8 +21,15 @@ export const SinglesCourtCard: React.FC<SinglesCourtCardProps> = ({ match }) => 
             <User className="w-3.5 h-3.5" />
           </div>
           <div className="min-w-0">
-            <div className={`text-sm font-bold truncate ${isTrainer ? 'text-amber-950' : 'text-slate-900'}`}>
-              {player.name}
+            <div className="flex items-center gap-1.5 truncate">
+              {player.isGuest && (
+                <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0">
+                  Gast
+                </span>
+              )}
+              <span className={`text-sm font-bold truncate ${isTrainer ? 'text-amber-950' : 'text-slate-900'}`}>
+                {player.name}
+              </span>
             </div>
             <div className="text-[10px] text-slate-500 font-medium">{subtitle}</div>
           </div>

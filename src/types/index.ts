@@ -62,6 +62,8 @@ export interface Player {
   evidence?: PlayerEvidence;
   isActive: boolean; // Aktives Mitglied oder pausierend
   createdAt: number;
+  isGuest?: boolean; // Kennzeichnet spontane Gast-Spieler
+  invitedByPlayerId?: string; // ID des Stammspielers, der den Gast mitgebracht hat
 }
 
 /**

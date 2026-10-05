@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { generateRoundPlan, generateFullSession, calculateBalancePenalty, TRAINER_ID } from './pairingEngine';
+import {
+  generateRoundPlan,
+  generateFullSession,
+  calculateBalancePenalty,
+  calculateHistoryPenalty,
+  TRAINER_ID
+} from './pairingEngine';
 import { Player } from '../types';
 
 describe('Pairing Engine (Paarungs-Algorithmus)', () => {
@@ -512,5 +518,142 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
         generateFullSession(subset, att, { trainerAvailable: false, trainerSkill: 7 });
       }).not.toThrow();
     }
+  });
+
+  describe('Gast-Modus: Freundschafts-Paarungen & Ausnahmeregeln', () => {
+    it('Gast und Host spielen in Runde 2 (Mentor) und Runde 3 (Social) bevorzugt auf demselben Feld', () => {
+      // 8 Spieler: Alex (p1, Skill 9), Basti (p2, Skill 8) ... Oliver (p15, Skill 2)
+      // Gast Lukas (Skill 3) wurde von Alex (p1) eingeladen
+      const host = mockPlayers[0]; // Alex, Skill 9
+      const guest: Player = {
+        id: 'guest-lukas',
+        name: 'Lukas (Gast)',
+        skill: 3,
+        isActive: true,
+        isGuest: true,
+        invitedByPlayerId: host.id,
+        createdAt: Date.now()
+      };
+
+      // 7 Stammspieler + 1 Gast = 8 Spieler (2 Felder)
+      const players = [host, guest, ...mockPlayers.slice(1, 7)];
+      const att = players.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const session = generateFullSession(players, att, { trainerAvailable: false });
+
+      // In Runde 2 (Mentor): Alex (stark, 9) und Lukas (schwach, 3) sollten auf demselben Feld sein
+      const r2Matches = session.rounds[1].matches;
+      const r2SharedCourt = r2Matches.find(m => {
+        const ids = [m.team1.player1.id, m.team1.player2.id, m.team2.player1.id, m.team2.player2.id];
+        return ids.includes(host.id) && ids.includes(guest.id);
+      });
+      expect(r2SharedCourt).toBeDefined();
+
+      // In Runde 3 (Social): Ebenfalls auf demselben Feld
+      const r3Matches = session.rounds[2].matches;
+      const r3SharedCourt = r3Matches.find(m => {
+        const ids = [m.team1.player1.id, m.team1.player2.id, m.team2.player1.id, m.team2.player2.id];
+        return ids.includes(host.id) && ids.includes(guest.id);
+      });
+      expect(r3SharedCourt).toBeDefined();
+    });
+
+    it('Option A in Runde 1: Bei ähnlicher Spielstärke (Diff <= 2) teilen sich Gast und Host das Feld', () => {
+      // Host Basti (Skill 8), Gast Thorsten (Skill 7) eingeladen von Basti
+      const host = mockPlayers[1]; // Basti (Skill 8)
+      const guest: Player = {
+        id: 'guest-thorsten',
+        name: 'Thorsten (Gast)',
+        skill: 7,
+        isActive: true,
+        isGuest: true,
+        invitedByPlayerId: host.id,
+        createdAt: Date.now()
+      };
+
+      const players = [host, guest, ...mockPlayers.slice(2, 8)]; // 8 Spieler
+      const att = players.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const plan = generateRoundPlan({
+        roundNumber: 1,
+        roundType: 'peer',
+        players,
+        attendanceMap: att,
+        trainerAvailable: false
+      });
+
+      const sharedMatch = plan.matches.find(m => {
+        const ids = [m.team1.player1.id, m.team1.player2.id, m.team2.player1.id, m.team2.player2.id];
+        return ids.includes(host.id) && ids.includes(guest.id);
+      });
+      expect(sharedMatch).toBeDefined();
+    });
+
+    it('Wiederholte Partnerschaft zwischen Gast und Host wird nicht mit 120 Strafpunkten blockiert', () => {
+      const host = mockPlayers[0];
+      const guest: Player = {
+        id: 'guest-1',
+        name: 'Gast 1',
+        skill: 7,
+        isActive: true,
+        isGuest: true,
+        invitedByPlayerId: host.id,
+        createdAt: Date.now()
+      };
+      const p3 = mockPlayers[2];
+      const p4 = mockPlayers[3];
+      const p5 = mockPlayers[4];
+
+      // Angenommen, Host und Gast haben in Runde 1 schon zusammen als Team 1 gespielt
+      const prevRound: RoundPlan = {
+        roundNumber: 1,
+        roundType: 'peer',
+        matches: [
+          {
+            id: 'm1',
+            courtNumber: 1,
+            team1: { player1: host, player2: guest, totalSkill: 16, averageSkill: 8 },
+            team2: { player1: p3, player2: p4, totalSkill: 15, averageSkill: 7.5 },
+            roundType: 'peer',
+            skillDiff: 1
+          }
+        ],
+        restingPlayers: [],
+        trainerParticipated: false
+      };
+
+      // Wenn reguläre Spieler erneut zusammen spielen würden, gäbe es 120 Strafpunkte.
+      // Für Gast und Host entfällt dieser Malus:
+      const penalty = calculateHistoryPenalty(host, guest, p3, p5, [], [prevRound]);
+      expect(penalty).toBe(0);
+
+      // Zum Gegenvergleich: Reguläres Doppel (p1 und p2) erhält bei Wiederholung 120 Punkte:
+      const regP1 = mockPlayers[0];
+      const regP2 = mockPlayers[1];
+      const prevRoundReg: RoundPlan = {
+        roundNumber: 1,
+        roundType: 'peer',
+        matches: [
+          {
+            id: 'm-reg',
+            courtNumber: 1,
+            team1: { player1: regP1, player2: regP2, totalSkill: 17, averageSkill: 8.5 },
+            team2: { player1: p3, player2: p4, totalSkill: 15, averageSkill: 7.5 },
+            roundType: 'peer',
+            skillDiff: 2
+          }
+        ],
+        restingPlayers: [],
+        trainerParticipated: false
+      };
+      const regPenalty = calculateHistoryPenalty(regP1, regP2, p3, p5, [], [prevRoundReg]);
+      expect(regPenalty).toBe(160); // 120 Partner + 40 3er-Feld-Overlap
+    });
   });
 });

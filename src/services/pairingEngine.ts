@@ -41,6 +41,15 @@ export interface GenerateRoundOptions {
 }
 
 /**
+ * Prüft, ob zwei Spieler eine Gast-Host-Beziehung haben (Gast und sein einladender Freund)
+ */
+export function isGuestHostRelation(pA: Player, pB: Player): boolean {
+  if (pA.isGuest && pA.invitedByPlayerId && pA.invitedByPlayerId === pB.id) return true;
+  if (pB.isGuest && pB.invitedByPlayerId && pB.invitedByPlayerId === pA.id) return true;
+  return false;
+}
+
+/**
  * Berechnet Strafpunkte für wiederholte Partnerschaften und Gegnerschaften
  * 
  * @param p1 Erster Spieler Team 1
@@ -61,6 +70,11 @@ export function calculateHistoryPenalty(
 ): number {
   let penalty = 0;
 
+  // Für Gast und seinen einladenden Freund gilt die Wiederholungs-Strafe nicht,
+  // da der Gast primär mit oder gegen seinen Freund spielen möchte
+  const isP1P2GuestHost = isGuestHostRelation(p1, p2);
+  const isP3P4GuestHost = isGuestHostRelation(p3, p4);
+
   // 1. Prüfung in den bereits gespielten Runden des HEUTIGEN Abends
   for (const prevRound of previousRounds) {
     for (const match of prevRound.matches) {
@@ -71,18 +85,20 @@ export function calculateHistoryPenalty(
         match.team2.player2.id
       ];
 
-      // Gleiche Partner heute? (Sehr hohe Strafe: 120 Punkte)
+      // Gleiche Partner heute? (Sehr hohe Strafe: 120 Punkte - entfällt für Gast & Freund)
       const t1TodaySame =
-        (match.team1.player1.id === p1.id && match.team1.player2.id === p2.id) ||
+        !isP1P2GuestHost &&
+        ((match.team1.player1.id === p1.id && match.team1.player2.id === p2.id) ||
         (match.team1.player1.id === p2.id && match.team1.player2.id === p1.id) ||
         (match.team2.player1.id === p1.id && match.team2.player2.id === p2.id) ||
-        (match.team2.player1.id === p2.id && match.team2.player2.id === p1.id);
+        (match.team2.player1.id === p2.id && match.team2.player2.id === p1.id));
 
       const t2TodaySame =
-        (match.team1.player1.id === p3.id && match.team1.player2.id === p4.id) ||
+        !isP3P4GuestHost &&
+        ((match.team1.player1.id === p3.id && match.team1.player2.id === p4.id) ||
         (match.team1.player1.id === p4.id && match.team1.player2.id === p3.id) ||
         (match.team2.player1.id === p3.id && match.team2.player2.id === p4.id) ||
-        (match.team2.player1.id === p4.id && match.team2.player2.id === p3.id);
+        (match.team2.player1.id === p4.id && match.team2.player2.id === p3.id));
 
       if (t1TodaySame) penalty += 120;
       if (t2TodaySame) penalty += 120;
@@ -90,18 +106,25 @@ export function calculateHistoryPenalty(
       // Komplett gleiches 4er-Feld heute? (Zusatzstrafe: 40 Punkte)
       const overlapCount = [p1.id, p2.id, p3.id, p4.id].filter(id => matchPlayerIds.includes(id)).length;
       if (overlapCount >= 3) {
-        penalty += 40;
+        // Nicht bestrafen, wenn die Überschneidung durch die erwünschte Gast-Host-Kombination entsteht
+        const hasGuestHostPair =
+          isP1P2GuestHost || isP3P4GuestHost ||
+          isGuestHostRelation(p1, p3) || isGuestHostRelation(p1, p4) ||
+          isGuestHostRelation(p2, p3) || isGuestHostRelation(p2, p4);
+        if (!hasGuestHostPair) {
+          penalty += 40;
+        }
       }
     }
   }
 
   // 2. Prüfung in der Historie früherer Trainingsabende (Vorwochen)
   for (const history of historicalPairings) {
-    // Partner-Prüfung Vorwochen (Strafe: 40 Punkte)
-    if (history.partnerMap[p1.id] === p2.id || history.partnerMap[p2.id] === p1.id) {
+    // Partner-Prüfung Vorwochen (Strafe: 40 Punkte - entfällt für Gast & Freund)
+    if (!isP1P2GuestHost && (history.partnerMap[p1.id] === p2.id || history.partnerMap[p2.id] === p1.id)) {
       penalty += 40;
     }
-    if (history.partnerMap[p3.id] === p4.id || history.partnerMap[p4.id] === p3.id) {
+    if (!isP3P4GuestHost && (history.partnerMap[p3.id] === p4.id || history.partnerMap[p4.id] === p3.id)) {
       penalty += 40;
     }
 
@@ -207,11 +230,22 @@ export function findBestCourtMatchWithCost(
     const historyPenalty = calculateHistoryPenalty(p1, p2, p3, p4, historicalPairings, previousRounds);
     const balancePenalty = calculateBalancePenalty(skillDiff);
 
+    // Bonus, wenn Gast und einladender Freund auf demselben Feld stehen
+    let guestBonus = 0;
+    if (isGuestHostRelation(p1, p2) || isGuestHostRelation(p3, p4)) {
+      guestBonus -= 80; // Gemeinsam als Doppel-Partner
+    } else if (
+      isGuestHostRelation(p1, p3) || isGuestHostRelation(p1, p4) ||
+      isGuestHostRelation(p2, p3) || isGuestHostRelation(p2, p4)
+    ) {
+      guestBonus -= 50; // Als direkte Duell-Gegner auf demselben Feld
+    }
+
     let cost = 0;
     if (roundType === 'peer') {
-      cost = balancePenalty * 1.5 + historyPenalty;
+      cost = balancePenalty * 1.5 + historyPenalty + guestBonus;
     } else {
-      cost = balancePenalty + historyPenalty;
+      cost = balancePenalty + historyPenalty + guestBonus;
     }
 
     if (cost < lowestCost || bestMatch === null) {
@@ -670,14 +704,57 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
       // Starke mit Starken, Schwächere mit Schwächeren
       // -------------------------------------------------------------
       const sorted = [...poolForDoubles].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
+      const courts: [Player, Player, Player, Player][] = [];
+
+      for (let c = 0; c < maxPossibleDoublesCourts; c++) {
+        courts.push(sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player]);
+      }
+
+      // Option A: Wenn Gast und einladender Freund eine ähnliche Spielstärke haben (Differenz <= 2.0),
+      // aber auf benachbarten Feldern gelandet sind, auf dasselbe Feld zusammenführen
+      for (const guest of poolForDoubles) {
+        if (!guest.isGuest || !guest.invitedByPlayerId) continue;
+        const host = poolForDoubles.find(p => p.id === guest.invitedByPlayerId);
+        if (!host) continue;
+
+        const skillGap = Math.abs(getEffectiveSkill(guest) - getEffectiveSkill(host));
+        if (skillGap > 2.0) continue; // Bei größerem Gefälle in R1 strikt nach Niveau trennen (Option A)
+
+        const cGuestIdx = courts.findIndex(c => c.some(p => p.id === guest.id));
+        const cHostIdx = courts.findIndex(c => c.some(p => p.id === host.id));
+
+        if (cGuestIdx !== -1 && cHostIdx !== -1 && cGuestIdx !== cHostIdx) {
+          const hostCourt = courts[cHostIdx];
+          const guestCourt = courts[cGuestIdx];
+
+          // Finde in Host-Court den Nicht-Host-Spieler mit geringster Stärkedistanz zu Gast
+          let bestSwapTargetIdx = -1;
+          let minDistance = Number.MAX_SAFE_INTEGER;
+
+          for (let i = 0; i < hostCourt.length; i++) {
+            if (hostCourt[i].id === host.id) continue;
+            const dist = Math.abs(getEffectiveSkill(hostCourt[i]) - getEffectiveSkill(guest));
+            if (dist < minDistance) {
+              minDistance = dist;
+              bestSwapTargetIdx = i;
+            }
+          }
+
+          if (bestSwapTargetIdx !== -1 && minDistance <= 2.5) {
+            const guestInCourtIdx = guestCourt.findIndex(p => p.id === guest.id);
+            const temp = hostCourt[bestSwapTargetIdx];
+            hostCourt[bestSwapTargetIdx] = guest;
+            guestCourt[guestInCourtIdx] = temp;
+          }
+        }
+      }
 
       for (let c = 0; c < maxPossibleDoublesCourts; c++) {
         const courtNumber = c + 1;
-        const four = sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player];
         const match = findBestCourtMatch(
           roundNumber,
           courtNumber,
-          four,
+          courts[c],
           'peer',
           historicalPairings,
           previousRoundsCurrentSession

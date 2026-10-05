@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Player, SkillProposal } from '../types';
-import { Plus, Search, Edit3, Trash2, UserCheck, UserX, X, RotateCcw, Sparkles } from 'lucide-react';
+import { Plus, Search, Edit3, Trash2, UserCheck, UserX, X, RotateCcw, Sparkles, UserPlus } from 'lucide-react';
 import { getEffectiveSkill } from '../services/pairingEngine';
 import {
   generateSkillProposals,
@@ -37,6 +37,7 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
   const [name, setName] = useState<string>('');
   const [skill, setSkill] = useState<number>(5);
   const [isActive, setIsActive] = useState<boolean>(true);
+  const [isGuest, setIsGuest] = useState<boolean>(false);
 
   const filteredPlayers = players.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -81,6 +82,7 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
     setName('');
     setSkill(5);
     setIsActive(true);
+    setIsGuest(false);
     setIsModalOpen(true);
   };
 
@@ -89,6 +91,7 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
     setName(player.name);
     setSkill(player.skill);
     setIsActive(player.isActive);
+    setIsGuest(player.isGuest || false);
     setIsModalOpen(true);
   };
 
@@ -101,7 +104,9 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
         ...editingPlayer,
         name: name.trim(),
         skill,
-        isActive
+        isActive,
+        isGuest: isGuest ? true : undefined,
+        invitedByPlayerId: isGuest ? editingPlayer.invitedByPlayerId : undefined
       });
     } else {
       onAddPlayer({
@@ -223,10 +228,24 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
                 </button>
 
                 <div className="min-w-0">
-                  <div className={`text-sm font-bold truncate ${player.isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
-                    {player.name}
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold truncate ${player.isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>
+                      {player.name}
+                    </span>
+                    {player.isGuest && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                        Gast
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[11px] text-slate-500 font-medium">
+                  <div className="text-[11px] text-slate-500 font-medium truncate">
+                    {player.isGuest && player.invitedByPlayerId ? (
+                      <span className="text-indigo-600 font-semibold">
+                        Gast von {players.find(p => p.id === player.invitedByPlayerId)?.name || 'Unbekannt'} •{' '}
+                      </span>
+                    ) : player.isGuest ? (
+                      <span className="text-indigo-600 font-semibold">Spontangast • </span>
+                    ) : null}
                     {getSkillLabel(player.skill)}
                   </div>
                 </div>
@@ -266,6 +285,28 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
                     <RotateCcw className="w-4 h-4" />
                   </button>
                 ) : null}
+
+                {player.isGuest && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated: Player = {
+                        ...player,
+                        isGuest: undefined,
+                        invitedByPlayerId: undefined
+                      };
+                      if (onUpdatePlayers) {
+                        onUpdatePlayers(players.map(p => (p.id === player.id ? updated : p)));
+                      } else {
+                        onUpdatePlayer(updated);
+                      }
+                    }}
+                    className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition"
+                    title="Als festes Vereinsmitglied übernehmen"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                  </button>
+                )}
 
                 <button
                   onClick={() => handleOpenEdit(player)}
@@ -358,6 +399,25 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
                   <span className="text-xs font-bold text-slate-800">Aktives Gruppenmitglied</span>
                 </label>
               </div>
+
+              {editingPlayer?.isGuest && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!isGuest}
+                      onChange={e => setIsGuest(!e.target.checked)}
+                      className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-indigo-950">
+                      Als festes Vereinsmitglied übernehmen
+                    </span>
+                  </label>
+                  <p className="text-[11px] text-indigo-700/80 pl-6">
+                    Entfernt den Gaststatus und ermöglicht zukünftige Stärke-Korrekturen.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 pt-3">
                 <button

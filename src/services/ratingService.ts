@@ -106,6 +106,20 @@ export function evaluateMatchScore(match: Match): MatchEvaluationResult {
     };
   }
 
+  // 2b. Matches mit Gastspielern ausschließen (Stärke ist nur grob geschätzt)
+  const hasGuest =
+    Boolean(match.team1.player1.isGuest) ||
+    Boolean(match.team1.player2.isGuest) ||
+    Boolean(match.team2.player1.isGuest) ||
+    Boolean(match.team2.player2.isGuest);
+
+  if (hasGuest) {
+    return {
+      eligible: false,
+      reason: 'Matches mit Gastspielern werden nicht für Spielstärken-Korrekturen ausgewertet.'
+    };
+  }
+
   // 3. Ergebnis vorhanden und vollständig?
   if (!match.score || !isScoreComplete(match.score)) {
     return {
@@ -245,7 +259,7 @@ export function generateSkillProposals(players: Player[]): SkillProposal[] {
   const proposals: SkillProposal[] = [];
 
   for (const player of players) {
-    if (player.id === TRAINER_ID) continue;
+    if (player.id === TRAINER_ID || player.isGuest) continue;
 
     const records = player.evidence?.records || [];
     if (records.length < MIN_QUALIFYING_MATCHES) continue;
