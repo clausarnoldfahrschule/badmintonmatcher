@@ -15,16 +15,12 @@ Diese Roadmap dokumentiert angedachte und geplante Erweiterungen für den **Badm
 
 ---
 
-## 📈 2. Automatische Basiswert-Beförderung (Schwellenwert $\ge$ 0,8)
-**Status:** Konzeptioniert / Diskutiert  
-**Konzept:**
-- Aktuell sammelt das System Feinanpassungen (`skillAdjustment`) im Bereich von $-1{,}5$ bis $+1{,}5$ bezogen auf den Trainer-Basiswert.
-- **Idee:** Wenn ein Spieler über mehrere Wochen so konstant stark (oder schwach) spielt, dass sein Zusatzwert einen Schwellenwert von z. B. **$+0{,}8$** (oder $-0{,}8$) erreicht, schlägt die App dem Trainer eine dauerhafte Anpassung des Basiswerts vor:
-  - *Vorschlag im Dialog:* „Max M. spielt konstant über seinem Niveau. Basiswert von 6 auf **7** anheben und Feinanpassung auf **0,0** zurücksetzen?“
-- **Vorteile:**
-  - Saubere, ganzzahlige Basis-Level in der Mitgliederliste.
-  - Der Spieler erhält wieder den vollen Spielraum von $\pm 1{,}5$ für künftige Entwicklungen.
-  - Der Trainer behält mit 1-Klick-Freigabe die volle Kontrolle.
+## ✅ 2. Lautlose Feinanpassung & Stufenwechsel-Vorschlag (Schwellenwert $\pm 0{,}8$)
+**Status:** Vollständig umgesetzt & aktiv  
+**Umsetzung:**
+- Sanfte Nuancen ($\pm 0{,}3$) laufen vollautomatisch im Hintergrund ohne Trainer-Zwischenfragen.
+- Erst ab Erreichen der Schwelle von $\pm 0{,}8$ (z. B. $+0{,}9$) wird der Trainer im Dialog gefragt, ob der Spieler eine Stufe auf- oder absteigen soll.
+- Bei Bestätigung wird der Basiswert angepasst (z. B. 6 ➔ 7) und der Zusatzwert auf $0{,}0$ zurückgesetzt.
 
 ---
 

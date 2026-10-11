@@ -4,7 +4,7 @@ import { Plus, Search, Edit3, Trash2, UserCheck, UserX, X, RotateCcw, Sparkles, 
 import { getEffectiveSkill } from '../services/pairingEngine';
 import {
   generateSkillProposals,
-  applySkillAdjustment,
+  applySkillProposal,
   dismissSkillProposal,
   resetPlayerSkillToBaseline
 } from '../services/ratingService';
@@ -48,10 +48,10 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
     ? Math.round((players.reduce((sum, p) => sum + getEffectiveSkill(p), 0) / players.length) * 10) / 10
     : 0;
 
-  const handleApplyProposal = (player: Player, newAdjustment: number) => {
-    const updated = applySkillAdjustment(player, newAdjustment);
+  const handleApplyProposal = (proposal: SkillProposal) => {
+    const updated = applySkillProposal(proposal.player, proposal);
     if (onUpdatePlayers) {
-      onUpdatePlayers(players.map(p => (p.id === player.id ? updated : p)));
+      onUpdatePlayers(players.map(p => (p.id === proposal.player.id ? updated : p)));
     } else {
       onUpdatePlayer(updated);
     }
@@ -70,7 +70,7 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
     if (!onUpdatePlayers) return;
     let list = [...players];
     for (const prop of propsToApply) {
-      const updated = applySkillAdjustment(prop.player, prop.targetAdjustment);
+      const updated = applySkillProposal(prop.player, prop);
       list = list.map(p => (p.id === prop.player.id ? updated : p));
     }
     onUpdatePlayers(list);
@@ -137,10 +137,10 @@ export const PlayerManagement: React.FC<PlayerManagementProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                {proposals.length} Vorschlag zur Spielstärke-Anpassung verfügbar!
+                {proposals.length} {proposals.length === 1 ? 'Vorschlag zum Stufenwechsel' : 'Vorschläge zum Stufenwechsel'} verfügbar!
               </h3>
               <p className="text-xs text-slate-600">
-                Basierend auf den Rundenergebnissen über die letzten Wochen.
+                Auf- oder Abstieg nach konstanten Ergebnissen in Runde 1 über mehrere Wochen.
               </p>
             </div>
           </div>

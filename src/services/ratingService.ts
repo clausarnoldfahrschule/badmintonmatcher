@@ -24,10 +24,12 @@ import { TRAINER_ID, getEffectiveSkill } from './pairingEngine';
 
 export const MAX_SKILL_ADJUSTMENT = 1.5;
 export const MIN_SKILL_ADJUSTMENT = -1.5;
-export const DEFAULT_PROPOSAL_DELTA = 0.3;
+export const SILENT_ADJUSTMENT_DELTA = 0.3; // Sanfte, lautlose Feinanpassung im Hintergrund
 export const MIN_QUALIFYING_MATCHES = 3;
 export const MIN_UNIQUE_PARTNERS = 2;
-export const SIGNAL_PROPOSAL_THRESHOLD = 0.8;
+export const SIGNAL_EVIDENCE_THRESHOLD = 0.8;
+export const PROMOTION_THRESHOLD = 0.8; // Ab +0.8 Stufenaufstieg vorschlagen
+export const RELEGATION_THRESHOLD = -0.8; // Ab -0.8 Stufenabstieg vorschlagen
 
 /**
  * Berechnet Summenpunkte und Punktedifferenz aus den zwei Sätzen eines Matches
@@ -246,14 +248,54 @@ export function accumulateSessionEvidence(
     }
   }
 
+  // Lautlose Feinanpassung im Hintergrund:
+  // Nach Erfassung der Runde prüfen, ob Spieler die Kriterien (3 Spiele, 2 Partner, klares Signal) erfüllen.
+  // Falls ja: skillAdjustment um ±0.3 lautlos anpassen, ohne Siggi mit Zwischenfragen zu belasten.
+  for (const [playerId, player] of playerMap.entries()) {
+    if (player.id === TRAINER_ID || player.isGuest) continue;
+    const records = player.evidence?.records || [];
+    if (records.length < MIN_QUALIFYING_MATCHES) continue;
+
+    const uniquePartners = new Set(records.map(r => r.partnerId));
+    if (uniquePartners.size < MIN_UNIQUE_PARTNERS) continue;
+
+    const totalSignal = records.reduce((sum, r) => sum + r.surpriseSignal, 0);
+    const avgSignal = totalSignal / records.length;
+
+    let delta = 0;
+    if (avgSignal >= SIGNAL_EVIDENCE_THRESHOLD) {
+      delta = SILENT_ADJUSTMENT_DELTA;
+    } else if (avgSignal <= -SIGNAL_EVIDENCE_THRESHOLD) {
+      delta = -SILENT_ADJUSTMENT_DELTA;
+    }
+
+    if (delta !== 0) {
+      const currentAdj = player.skillAdjustment || 0;
+      let newAdj = Math.round((currentAdj + delta) * 10) / 10;
+      newAdj = Math.max(MIN_SKILL_ADJUSTMENT, Math.min(MAX_SKILL_ADJUSTMENT, newAdj));
+
+      // Begrenzung durch absolute Grenzen 1 bis 10
+      if (player.skill + newAdj > 10) {
+        newAdj = Math.round((10 - player.skill) * 10) / 10;
+      } else if (player.skill + newAdj < 1) {
+        newAdj = Math.round((1 - player.skill) * 10) / 10;
+      }
+
+      playerMap.set(playerId, {
+        ...player,
+        skillAdjustment: newAdj,
+        evidence: { records: [] } // Evidenz für diesen Schritt geleert
+      });
+    }
+  }
+
   return Array.from(playerMap.values());
 }
 
 /**
- * Erstellt Vorschläge zur Feinjustierung der Spielstärke, falls genügend Evidenz vorliegt:
- * - Mindestens 3 gewertete R1-Spiele
- * - Mindestens 2 verschiedene Partner
- * - Durchschnittliches Überraschungssignal |S_avg| >= 0.8
+ * Erstellt Vorschläge zum Stufenaufstieg oder -abstieg (z. B. Stärke 6 -> 7 oder 5 -> 4),
+ * sobald der im Hintergrund gesammelte Zusatzwert die Schwelle von +/- 0.8 erreicht hat.
+ * Nur bei echtem Stufenwechsel wird der Trainer um Freigabe gebeten!
  */
 export function generateSkillProposals(players: Player[]): SkillProposal[] {
   const proposals: SkillProposal[] = [];
@@ -261,67 +303,54 @@ export function generateSkillProposals(players: Player[]): SkillProposal[] {
   for (const player of players) {
     if (player.id === TRAINER_ID || player.isGuest) continue;
 
-    const records = player.evidence?.records || [];
-    if (records.length < MIN_QUALIFYING_MATCHES) continue;
+    const adjustment = player.skillAdjustment || 0;
 
-    // Partner-Diversität prüfen
-    const uniquePartners = new Set(records.map(r => r.partnerId));
-    if (uniquePartners.size < MIN_UNIQUE_PARTNERS) continue;
-
-    const totalSignal = records.reduce((sum, r) => sum + r.surpriseSignal, 0);
-    const avgSignal = totalSignal / records.length;
-
-    let proposedDelta = 0;
-    if (avgSignal >= SIGNAL_PROPOSAL_THRESHOLD) {
-      proposedDelta = DEFAULT_PROPOSAL_DELTA;
-    } else if (avgSignal <= -SIGNAL_PROPOSAL_THRESHOLD) {
-      proposedDelta = -DEFAULT_PROPOSAL_DELTA;
+    // Aufstiegsvorschlag: adjustment >= 0.8 und noch nicht auf Höchststufe 10
+    if (adjustment >= PROMOTION_THRESHOLD && player.skill < 10) {
+      const targetSkill = player.skill + 1;
+      proposals.push({
+        player,
+        currentSkill: player.skill,
+        targetSkill,
+        type: 'promotion',
+        currentAdjustment: adjustment,
+        reason: `Spielt seit mehreren Wochen konstant über seinem Niveau (Zusatzwert: +${adjustment}). Aufstieg zu Stufe ${targetSkill}?`
+      });
     }
-
-    if (proposedDelta === 0) continue;
-
-    const currentAdjustment = player.skillAdjustment || 0;
-    let targetAdjustment = Math.round((currentAdjustment + proposedDelta) * 10) / 10;
-
-    // Grenzen von +/- 1.5 bezogen auf den Basis-Skill respektieren
-    targetAdjustment = Math.max(MIN_SKILL_ADJUSTMENT, Math.min(MAX_SKILL_ADJUSTMENT, targetAdjustment));
-
-    // Effektive Grenzen 1 bis 10 respektieren
-    const potentialEff = player.skill + targetAdjustment;
-    if (potentialEff > 10) {
-      targetAdjustment = Math.round((10 - player.skill) * 10) / 10;
-    } else if (potentialEff < 1) {
-      targetAdjustment = Math.round((1 - player.skill) * 10) / 10;
+    // Abstiegsvorschlag: adjustment <= -0.8 und noch nicht auf Mindeststufe 1
+    else if (adjustment <= RELEGATION_THRESHOLD && player.skill > 1) {
+      const targetSkill = player.skill - 1;
+      proposals.push({
+        player,
+        currentSkill: player.skill,
+        targetSkill,
+        type: 'relegation',
+        currentAdjustment: adjustment,
+        reason: `Spielt seit mehreren Wochen unter seinem Niveau (Zusatzwert: ${adjustment}). Einstufung auf Stufe ${targetSkill}?`
+      });
     }
-
-    // Falls keine Änderung mehr möglich ist (z. B. bereits am Limit)
-    if (Math.abs(targetAdjustment - currentAdjustment) < 0.05) continue;
-
-    const newEffectiveSkill = Math.round((player.skill + targetAdjustment) * 10) / 10;
-
-    const reason =
-      proposedDelta > 0
-        ? `Übertrifft Erwartung deutlich (${records.length} Spiele mit ${uniquePartners.size} Partnern, Ø Signal +${avgSignal.toFixed(2)})`
-        : `Bleibt unter Erwartung (${records.length} Spiele mit ${uniquePartners.size} Partnern, Ø Signal ${avgSignal.toFixed(2)})`;
-
-    proposals.push({
-      player,
-      currentSkill: player.skill,
-      currentAdjustment,
-      proposedDelta,
-      targetAdjustment,
-      newEffectiveSkill,
-      qualifyingMatchCount: records.length,
-      uniquePartnerCount: uniquePartners.size,
-      reason
-    });
   }
 
   return proposals;
 }
 
 /**
- * Wendet eine bestätigte Stärkeanpassung auf einen Spieler an und leert die gesammelte Evidenz
+ * Wendet einen bestätigten Auf- oder Abstieg an:
+ * - Neuer Basiswert (z.B. 6 -> 7)
+ * - Zusatzwert wird sauber auf 0 zurückgesetzt
+ * - Evidenz wird geleert
+ */
+export function applySkillProposal(player: Player, proposal: SkillProposal): Player {
+  return {
+    ...player,
+    skill: proposal.targetSkill as any,
+    skillAdjustment: 0,
+    evidence: { records: [] }
+  };
+}
+
+/**
+ * Wendet eine direkte Stärkeanpassung auf einen Spieler an und leert die gesammelte Evidenz
  */
 export function applySkillAdjustment(player: Player, newAdjustment: number): Player {
   const clamped = Math.max(
@@ -337,11 +366,17 @@ export function applySkillAdjustment(player: Player, newAdjustment: number): Pla
 }
 
 /**
- * Verwirft einen Vorschlag (leert die Evidenz, damit der Trainer nicht erneut gefragt wird)
+ * Verwirft einen Auf- oder Abstiegsvorschlag durch den Trainer:
+ * Der Basiswert bleibt unverändert.
+ * Der Zusatzwert wird gedämpft (z.B. von 0.9 auf 0.4), damit der Trainer nicht sofort
+ * am nächsten Abend erneut gefragt wird.
  */
 export function dismissSkillProposal(player: Player): Player {
+  const currentAdj = player.skillAdjustment || 0;
+  const dampened = currentAdj > 0 ? 0.4 : currentAdj < 0 ? -0.4 : 0;
   return {
     ...player,
+    skillAdjustment: dampened,
     evidence: { records: [] }
   };
 }

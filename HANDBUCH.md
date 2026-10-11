@@ -115,12 +115,18 @@ Die Erfassung von Spielergebnissen ist **vollständig optional**.
   - **Differenz > 20 Punkte:** Starkes Übergewicht (Signal = ±2).
 - **Überraschungssignal:** Die errechnete Stärkedifferenz vor dem Spiel wird mit dem tatsächlichen Ausgang verrechnet. Ein erwarteter Favoritensieg wird gedämpft; ein Underdog-Sieg liefert ein starkes Signal.
 
-### Der Zusatzwert (`skillAdjustment`, max. ±1.5)
-- Das System verändert niemals eigenmächtig Spielerstärken.
-- Es sammelt im Hintergrund über Wochen Evidenz (mindestens 3 gewertete R1-Spiele mit mindestens 2 verschiedenen Partnern).
-- Erst wenn ein klarer Trend vorliegt, poppt das Banner **„Vorschlag zur Spielstärke-Anpassung verfügbar“** auf.
-- Der Trainer entscheidet mit einem Klick, ob der Vorschlag (z. B. `+0.3`) übernommen oder verworfen wird.
-- Der Trainer-Basiswert (1–10) bleibt als stabiler Anker erhalten.
+### Der Zusatzwert (`skillAdjustment`, max. ±1.5) & Stufenwechsel
+- **Lautlose Feinanpassung im Hintergrund:**
+  - Erreicht ein Spieler über mehrere R1-Matches mit verschiedenen Partnern ein klares Überraschungssignal, wird sein Zusatzwert (`skillAdjustment`) im Hintergrund sanft um $\pm 0{,}3$ angepasst.
+  - Der Trainer wird hierbei **nicht** mit ständigen Zwischenfragen oder Popups belastet. Die Paarungs-Engine arbeitet im Hintergrund bereits mit der optimierten effektiven Stärke.
+- **Rückfrage nur bei echtem Stufenwechsel (Schwelle $\pm 0{,}8$):**
+  - Spielt ein Spieler über Wochen so konstant stark, dass sein Zusatzwert $\ge +0{,}8$ erreicht, poppt das Banner **„Vorschlag zum Stufenwechsel“** auf:
+    *„Max M. von Stufe 6 auf Stufe 7 befördern?“*
+  - Umgekehrt bei konstanter Unterforderung ($\le -0{,}8$): Vorschlag zur Anpassung (z. B. 5 auf 4).
+- **Entscheidung durch den Trainer:**
+  - **Befördern / Anpassen:** Der Basiswert steigt/sinkt um 1 Stufe, der Zusatzwert wird sauber auf $0{,}0$ zurückgesetzt und der Spieler hat wieder den vollen Entwicklungsspielraum.
+  - **Belassen:** Der Trainer lehnt ab. Der Zusatzwert wird gedämpft (unter 0.8), sodass der Trainer am nächsten Abend nicht sofort wieder gefragt wird.
+  - Über das Zurücksetzen-Icon (`RotateCcw`) in den Stammdaten kann der Zusatzwert jederzeit auf $0{,}0$ zurückgesetzt werden.
 
 ---
 

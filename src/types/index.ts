@@ -40,17 +40,14 @@ export interface PlayerEvidence {
 }
 
 /**
- * Vorschlag zur sanften Anpassung der Spielstärke zur Freigabe durch den Trainer
+ * Vorschlag zum Auf- oder Abstieg des Basiswerts (1 - 10) zur Freigabe durch den Trainer
  */
 export interface SkillProposal {
   player: Player;
   currentSkill: number;
+  targetSkill: number;
+  type: 'promotion' | 'relegation';
   currentAdjustment: number;
-  proposedDelta: number; // z.B. +0.3 oder -0.3
-  targetAdjustment: number;
-  newEffectiveSkill: number;
-  qualifyingMatchCount: number;
-  uniquePartnerCount: number;
   reason: string;
 }
 

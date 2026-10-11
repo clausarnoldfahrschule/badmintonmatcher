@@ -5,7 +5,7 @@ import { loadHistory, saveHistory, loadActiveSession, saveActiveSession, clearAc
 import {
   accumulateSessionEvidence,
   generateSkillProposals,
-  applySkillAdjustment,
+  applySkillProposal,
   dismissSkillProposal
 } from '../services/ratingService';
 import { CourtCard } from './CourtCard';
@@ -191,10 +191,10 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     setSessionSaved(false);
   };
 
-  const handleApplyProposal = (player: Player, newAdjustment: number) => {
-    const updated = applySkillAdjustment(player, newAdjustment);
+  const handleApplyProposal = (proposal: SkillProposal) => {
+    const updated = applySkillProposal(proposal.player, proposal);
     if (onUpdatePlayers) {
-      const updatedList = players.map(p => (p.id === player.id ? updated : p));
+      const updatedList = players.map(p => (p.id === proposal.player.id ? updated : p));
       onUpdatePlayers(updatedList);
       const remaining = generateSkillProposals(updatedList);
       setPendingProposals(remaining);
@@ -217,7 +217,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     if (!onUpdatePlayers) return;
     let list = [...players];
     for (const prop of propsToApply) {
-      const updated = applySkillAdjustment(prop.player, prop.targetAdjustment);
+      const updated = applySkillProposal(prop.player, prop);
       list = list.map(p => (p.id === prop.player.id ? updated : p));
     }
     onUpdatePlayers(list);
@@ -368,10 +368,10 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                {pendingProposals.length} Vorschlag zur Spielstärke-Anpassung verfügbar!
+                {pendingProposals.length} {pendingProposals.length === 1 ? 'Vorschlag zum Stufenwechsel' : 'Vorschläge zum Stufenwechsel'} verfügbar!
               </h3>
               <p className="text-xs text-slate-600">
-                Aus den Ergebnissen in Runde 1 über mehrere Trainingswochen.
+                Auf- oder Abstieg nach konstanten Ergebnissen in Runde 1 über mehrere Wochen.
               </p>
             </div>
           </div>

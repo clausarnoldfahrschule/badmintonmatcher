@@ -5,6 +5,7 @@ import {
   evaluateMatchScore,
   accumulateSessionEvidence,
   generateSkillProposals,
+  applySkillProposal,
   applySkillAdjustment,
   dismissSkillProposal,
   resetPlayerSkillToBaseline
@@ -248,7 +249,7 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
   });
 
   describe('Evidenz-Akkumulierung & Vorschlags-Generierung', () => {
-    it('erfordert mindestens 3 Spiele und 2 verschiedene Partner vor einem Vorschlag', () => {
+    it('passt Zusatzwert lautlos im Hintergrund an (erfordert mindestens 3 Spiele und 2 verschiedene Partner)', () => {
       const jan = createDummyPlayer('p1', 'Jan', 4);
       const otherPlayers = [
         createDummyPlayer('p2', 'Partner 1', 4),
@@ -274,8 +275,9 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
       };
 
       players = accumulateSessionEvidence(players, r1, '2026-10-01');
-      let proposals = generateSkillProposals(players);
-      expect(proposals).toHaveLength(0); // Erst 1 Spiel -> kein Vorschlag
+      let janUpdated = players.find(p => p.id === 'p1')!;
+      expect(janUpdated.skillAdjustment || 0).toBe(0); // Erst 1 Spiel -> noch kein Nudge
+      expect(generateSkillProposals(players)).toHaveLength(0);
 
       // Match 2: Jan wieder mit Partner 1 gewinnt klar (S = 2)
       const m2 = createDummyMatch('peer', jan, otherPlayers[0], otherPlayers[2], otherPlayers[3], {
@@ -285,8 +287,8 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
         set2Team2: 10
       });
       players = accumulateSessionEvidence(players, { ...r1, matches: [m2] }, '2026-10-08');
-      proposals = generateSkillProposals(players);
-      expect(proposals).toHaveLength(0); // Erst 2 Spiele -> kein Vorschlag
+      janUpdated = players.find(p => p.id === 'p1')!;
+      expect(janUpdated.skillAdjustment || 0).toBe(0); // Erst 2 Spiele -> noch kein Nudge
 
       // Match 3: Jan nochmals mit demselben Partner 1
       const m3 = createDummyMatch('peer', jan, otherPlayers[0], otherPlayers[2], otherPlayers[3], {
@@ -296,9 +298,9 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
         set2Team2: 10
       });
       players = accumulateSessionEvidence(players, { ...r1, matches: [m3] }, '2026-10-15');
-      proposals = generateSkillProposals(players);
-      // Obwohl 3 Spiele: nur 1 Partner! Vorschlag darf noch NICHT ausgelöst werden
-      expect(proposals).toHaveLength(0);
+      janUpdated = players.find(p => p.id === 'p1')!;
+      // Obwohl 3 Spiele: nur 1 Partner! Noch kein Nudge
+      expect(janUpdated.skillAdjustment || 0).toBe(0);
 
       // Match 4: Jan spielt nun mit Partner 2 und gewinnt ebenfalls überlegen (S = 2)
       const m4 = createDummyMatch('peer', jan, otherPlayers[1], otherPlayers[2], otherPlayers[3], {
@@ -308,108 +310,90 @@ describe('Rating Service: Ergebniserfassung & Signalmodell', () => {
         set2Team2: 10
       });
       players = accumulateSessionEvidence(players, { ...r1, matches: [m4] }, '2026-10-22');
-      proposals = generateSkillProposals(players);
+      janUpdated = players.find(p => p.id === 'p1')!;
 
       // Jetzt sind es 4 Spiele mit 2 verschiedenen Partnern und starkem positiven Signal
-      expect(proposals.length).toBeGreaterThan(0);
-      const janProposal = proposals.find(p => p.player.id === 'p1');
-      expect(janProposal).toBeDefined();
-      expect(janProposal?.proposedDelta).toBe(0.3);
-      expect(janProposal?.currentSkill).toBe(4);
-      expect(janProposal?.targetAdjustment).toBe(0.3);
-      expect(janProposal?.newEffectiveSkill).toBe(4.3);
+      // -> Lautloser Nudge im Hintergrund auf +0.3!
+      expect(janUpdated.skillAdjustment).toBe(0.3);
+      expect(janUpdated.skill).toBe(4); // Basiswert bleibt unverändert!
+      expect(janUpdated.evidence?.records).toHaveLength(0); // Evidenz für diesen Schritt geleert
+
+      // Siggi wird NICHT mit Zwischenfragen gestört (da +0.3 < 0.8 Schwelle)
+      expect(generateSkillProposals(players)).toHaveLength(0);
     });
 
-    it('achtet auf Grenzwerte (max +/- 1.5 Adjustment und 1 bis 10 Limit)', () => {
-      // Spieler steht schon bei +1.4 Adjustment
-      const alex = createDummyPlayer('p_top', 'Alex', 9, 1.4);
-      const records = [
-        {
-          date: '2026-10-01',
-          partnerId: 'p2',
-          opponentIds: ['p3', 'p4'] as [string, string],
-          pointDiff: 25,
-          calculatedDiff: 0,
-          observedSignal: 2,
-          expectedSignal: 0,
-          surpriseSignal: 2
-        },
-        {
-          date: '2026-10-08',
-          partnerId: 'p3',
-          opponentIds: ['p2', 'p4'] as [string, string],
-          pointDiff: 25,
-          calculatedDiff: 0,
-          observedSignal: 2,
-          expectedSignal: 0,
-          surpriseSignal: 2
-        },
-        {
-          date: '2026-10-15',
-          partnerId: 'p4',
-          opponentIds: ['p2', 'p3'] as [string, string],
-          pointDiff: 25,
-          calculatedDiff: 0,
-          observedSignal: 2,
-          expectedSignal: 0,
-          surpriseSignal: 2
-        }
-      ];
-      alex.evidence = { records };
+    it('erzeugt erst ab Schwellenwert +/- 0.8 einen Aufstiegs- oder Abstiegsvorschlag für den Trainer', () => {
+      // Spieler 1: steht bei +0.7 -> noch kein Vorschlag
+      const p1 = createDummyPlayer('p1', 'Alex', 6, 0.7);
+      expect(generateSkillProposals([p1])).toHaveLength(0);
 
-      const proposals = generateSkillProposals([alex]);
+      // Spieler 2: steht bei +0.8 -> Aufstiegsvorschlag zu Stufe 7!
+      const p2 = createDummyPlayer('p2', 'Max', 6, 0.8);
+      const promoProps = generateSkillProposals([p2]);
+      expect(promoProps).toHaveLength(1);
+      expect(promoProps[0].type).toBe('promotion');
+      expect(promoProps[0].currentSkill).toBe(6);
+      expect(promoProps[0].targetSkill).toBe(7);
+      expect(promoProps[0].currentAdjustment).toBe(0.8);
+
+      // Spieler 3: steht bei -0.8 -> Abstiegsvorschlag zu Stufe 4!
+      const p3 = createDummyPlayer('p3', 'Peter', 5, -0.8);
+      const relegateProps = generateSkillProposals([p3]);
+      expect(relegateProps).toHaveLength(1);
+      expect(relegateProps[0].type).toBe('relegation');
+      expect(relegateProps[0].currentSkill).toBe(5);
+      expect(relegateProps[0].targetSkill).toBe(4);
+      expect(relegateProps[0].currentAdjustment).toBe(-0.8);
+
+      // Höchststufe 10 kann nicht mehr befördert werden
+      const pTop = createDummyPlayer('p_top', 'Profi', 10, 1.2);
+      expect(generateSkillProposals([pTop])).toHaveLength(0);
+
+      // Mindeststufe 1 kann nicht mehr abgestiegen werden
+      const pMin = createDummyPlayer('p_min', 'Anfänger', 1, -1.0);
+      expect(generateSkillProposals([pMin])).toHaveLength(0);
+    });
+
+    it('übernimmt Aufstieg: setzt Basiswert + 1 und Zusatzwert sauber auf 0 zurück', () => {
+      const player = createDummyPlayer('p1', 'Max', 6, 0.9);
+      const proposals = generateSkillProposals([player]);
       expect(proposals).toHaveLength(1);
-      // Darf max +1.5 erreichen (also 1.4 + 0.3 = 1.7 wird auf 1.5 gekappt, bzw. 9 + 1.0 gekappt)
-      expect(proposals[0].targetAdjustment).toBe(1.0); // weil skill 9 + 1.0 = 10.0 (Maximalwert!)
-      expect(proposals[0].newEffectiveSkill).toBe(10.0);
+
+      const updated = applySkillProposal(player, proposals[0]);
+      expect(updated.skill).toBe(7); // Basiswert um 1 erhöht
+      expect(updated.skillAdjustment).toBe(0); // Zusatzwert sauber auf 0 zurückgesetzt!
+      expect(updated.evidence?.records).toHaveLength(0);
     });
 
-    it('übernimmt, verwirft und setzt Stärkeanpassungen zurück', () => {
-      let player = createDummyPlayer('p1', 'Jan', 4, 0);
-      player.evidence = {
-        records: [
-          {
-            date: 'd1',
-            partnerId: 'p2',
-            opponentIds: ['p3', 'p4'],
-            pointDiff: 25,
-            calculatedDiff: 0,
-            observedSignal: 2,
-            expectedSignal: 0,
-            surpriseSignal: 2
-          }
-        ]
-      };
+    it('übernimmt Abstieg: setzt Basiswert - 1 und Zusatzwert sauber auf 0 zurück', () => {
+      const player = createDummyPlayer('p1', 'Peter', 5, -0.9);
+      const proposals = generateSkillProposals([player]);
+      expect(proposals).toHaveLength(1);
 
-      // 1. Übernehmen
-      player = applySkillAdjustment(player, 0.3);
-      expect(player.skillAdjustment).toBe(0.3);
-      expect(player.evidence.records).toHaveLength(0); // Evidenz zurückgesetzt
+      const updated = applySkillProposal(player, proposals[0]);
+      expect(updated.skill).toBe(4); // Basiswert um 1 gesenkt
+      expect(updated.skillAdjustment).toBe(0); // Zusatzwert sauber auf 0 zurückgesetzt!
+      expect(updated.evidence?.records).toHaveLength(0);
+    });
 
-      // 2. Verwerfen
-      player.evidence = {
-        records: [
-          {
-            date: 'd2',
-            partnerId: 'p3',
-            opponentIds: ['p1', 'p4'],
-            pointDiff: -25,
-            calculatedDiff: 0,
-            observedSignal: -2,
-            expectedSignal: 0,
-            surpriseSignal: -2
-          }
-        ]
-      };
-      player = dismissSkillProposal(player);
-      expect(player.skillAdjustment).toBe(0.3); // Bleibt unverändert
-      expect(player.evidence.records).toHaveLength(0); // Evidenz geleert
+    it('verwirft Vorschlag: belässt Basiswert und dämpft Zusatzwert unter den Schwellenwert', () => {
+      const player = createDummyPlayer('p1', 'Max', 6, 0.9);
+      const proposals = generateSkillProposals([player]);
+      expect(proposals).toHaveLength(1);
 
-      // 3. Zurücksetzen auf Trainer-Basiswert
+      const updated = dismissSkillProposal(player);
+      expect(updated.skill).toBe(6); // Basiswert bleibt
+      expect(updated.skillAdjustment).toBe(0.4); // Gedämpft unter 0.8
+      // Jetzt poppt der Vorschlag nicht sofort wieder auf!
+      expect(generateSkillProposals([updated])).toHaveLength(0);
+    });
+
+    it('setzt Feineinstellung sauber auf Trainer-Basiswert zurück', () => {
+      let player = createDummyPlayer('p1', 'Jan', 4, 0.6);
       player = resetPlayerSkillToBaseline(player);
       expect(player.skillAdjustment).toBe(0);
       expect(player.skill).toBe(4);
-      expect(player.evidence.records).toHaveLength(0);
+      expect(player.evidence?.records).toHaveLength(0);
     });
   });
 });
