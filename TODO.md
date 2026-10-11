@@ -25,15 +25,13 @@ Diese Roadmap dokumentiert angedachte und geplante Erweiterungen für den **Badm
 
 ---
 
-## 📲 3. QR-Code Schnellübergabe (Urlaubsvertretung per Display-Scan)
-**Status:** Geplant / Hohe Priorität  
-**Konzept:**
-- Statt eine verschlüsselte Datei per Messenger/E-Mail herunter- und hochzuladen, zeigt Trainer Siggi auf seinem Handy einfach einen **QR-Code auf dem Display**.
-- Die Vertretung scannt diesen QR-Code mit der Handykamera (oder direkt in der App) ab – und hat **in 1 Sekunde den vollständigen Datenstand** (alle 42 Spieler, Stärken, Historie, Turniermodus) auf dem eigenen Gerät!
-- **Technische Machbarkeit:**
-  - Komprimiert (mittels gzip/deflate bzw. lz-string) schrumpft der gesamte Datenbestand von ~5 KB auf **unter 1.000 Bytes**.
-  - Ein regulärer QR-Code fasst bis zu **2.953 Bytes** (Binär) bzw. **4.296 Zeichen** – die Daten passen also problemlos und fehlerkorrigiert in einen einzelnen Standard-QR-Code.
-  - Optional mit kurzem 4-stelligem PIN geschützt oder direkt offline entschlüsselt.
+## ✅ 3. QR-Code Schnellübergabe (Urlaubsvertretung per Display-Scan)
+**Status:** Vollständig umgesetzt & aktiv 📲  
+**Umsetzung:**
+- Statt einer Datei zeigt der Trainer auf seinem Handy einfach einen **QR-Code auf dem Display**.
+- Die Vertretung scannt diesen Code direkt in der App per Smartphone-Kamera ab (inkl. Vibrationsfeedback bei Erkennung) oder wählt alternativ ein Foto/Screenshot aus.
+- **Effiziente Komprimierung:** Mittels optimierter Tuple-Kompression und `lz-string` Base64-Kodierung umfasst der gesamte Datenbestand aller 42 Vereinsmitglieder (inkl. Formwerten, Historie und Turniermodus) nur **~800 Zeichen** und scannt sich in Millisekunden.
+- 100% offline & lokal – keine Serverübertragung.
 
 ---
 
