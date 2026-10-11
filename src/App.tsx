@@ -98,6 +98,7 @@ export default function App() {
       {/* Footer mit Update-Prüfung */}
       <footer className="py-4 text-center text-xs text-slate-400 border-t border-slate-200 space-y-1">
         <div>Badminton Matchmaker • v1.1 • 100 % Offline im Browser</div>
+        <div className="text-[11px] text-slate-500 font-medium">Umsetzung durch Claus Arnold und Gemini.</div>
         <div>
           <button
             onClick={() => {
