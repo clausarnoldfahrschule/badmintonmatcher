@@ -35,8 +35,21 @@ describe('Storage Service & Encrypted Transfer', () => {
 
   it('sollte standardmäßig Demo-Spieler laden, wenn Speicher leer ist', () => {
     const players = loadPlayers();
-    expect(players).toHaveLength(DEFAULT_DEMO_PLAYERS.length);
-    expect(players[0].name).toBe('Alex M.');
+    expect(players).toHaveLength(42);
+    expect(players[0].name).toBe('Siggi');
+  });
+
+  it('sollte alten 16er-Demo-Kader automatisch auf die 42 Spieler migrieren', () => {
+    // Simuliere alten LocalStorage mit 16 Demo-Spielern
+    const old16 = [
+      { id: 'p1', name: 'Alex M.', skill: 9, isActive: true, createdAt: 1 },
+      ...Array(14).fill({ id: 'px', name: 'Demo', skill: 5, isActive: true, createdAt: 2 }),
+      { id: 'p16', name: 'Petra G.', skill: 2, isActive: true, createdAt: 16 }
+    ];
+    savePlayers(old16 as any);
+    const migrated = loadPlayers();
+    expect(migrated).toHaveLength(42);
+    expect(migrated[0].name).toBe('Siggi');
   });
 
   it('sollte modifizierte Spielerliste speichern und wieder laden', () => {

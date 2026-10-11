@@ -23,30 +23,56 @@ export interface ActiveSessionState {
 }
 
 /**
- * 16 realistische Demo-Spieler für den schnellen Start ohne manuelles Tippen
+ * 42 anonymisierte Spieler des Vereins für den sofortigen Start
  */
 export const DEFAULT_DEMO_PLAYERS: Player[] = [
-  { id: 'p1', name: 'Alex M.', skill: 9, isActive: true, createdAt: 1001 },
-  { id: 'p2', name: 'Bastian K.', skill: 8, isActive: true, createdAt: 1002 },
-  { id: 'p3', name: 'Christian W.', skill: 8, isActive: true, createdAt: 1003 },
-  { id: 'p4', name: 'Dirk S.', skill: 7, isActive: true, createdAt: 1004 },
-  { id: 'p5', name: 'Elena R.', skill: 7, isActive: true, createdAt: 1005 },
-  { id: 'p6', name: 'Fabian H.', skill: 6, isActive: true, createdAt: 1006 },
-  { id: 'p7', name: 'Gregor B.', skill: 6, isActive: true, createdAt: 1007 },
-  { id: 'p8', name: 'Hanna L.', skill: 5, isActive: true, createdAt: 1008 },
-  { id: 'p9', name: 'Ines T.', skill: 5, isActive: true, createdAt: 1009 },
-  { id: 'p10', name: 'Jan P.', skill: 4, isActive: true, createdAt: 1010 },
-  { id: 'p11', name: 'Klaus D.', skill: 4, isActive: true, createdAt: 1011 },
-  { id: 'p12', name: 'Laura M.', skill: 3, isActive: true, createdAt: 1012 },
-  { id: 'p13', name: 'Markus V.', skill: 3, isActive: true, createdAt: 1013 },
-  { id: 'p14', name: 'Nina K.', skill: 3, isActive: true, createdAt: 1014 },
-  { id: 'p15', name: 'Oliver F.', skill: 2, isActive: true, createdAt: 1015 },
-  { id: 'p16', name: 'Petra G.', skill: 2, isActive: true, createdAt: 1016 }
+  { id: 'p1', name: 'Siggi', skill: 7, isActive: true, createdAt: 1001 },
+  { id: 'p2', name: 'Alex', skill: 9, isActive: true, createdAt: 1002 },
+  { id: 'p3', name: 'Andrea', skill: 8, isActive: true, createdAt: 1003 },
+  { id: 'p4', name: 'Anja', skill: 4, isActive: true, createdAt: 1004 },
+  { id: 'p5', name: 'Beatrice', skill: 5, isActive: true, createdAt: 1005 },
+  { id: 'p6', name: 'Carsten J.', skill: 7, isActive: true, createdAt: 1006 },
+  { id: 'p7', name: 'Carsten S.', skill: 9, isActive: true, createdAt: 1007 },
+  { id: 'p8', name: 'Claus', skill: 9, isActive: true, createdAt: 1008 },
+  { id: 'p9', name: 'Dennis', skill: 10, isActive: true, createdAt: 1009 },
+  { id: 'p10', name: 'Johannes', skill: 8, isActive: true, createdAt: 1010 },
+  { id: 'p11', name: 'Eileen', skill: 6, isActive: true, createdAt: 1011 },
+  { id: 'p12', name: 'Günther', skill: 6, isActive: true, createdAt: 1012 },
+  { id: 'p13', name: 'Johanna', skill: 6, isActive: true, createdAt: 1013 },
+  { id: 'p14', name: 'Jonas', skill: 8, isActive: true, createdAt: 1014 },
+  { id: 'p15', name: 'Julia', skill: 6, isActive: true, createdAt: 1015 },
+  { id: 'p16', name: 'Marc', skill: 5, isActive: true, createdAt: 1016 },
+  { id: 'p17', name: 'Marcel', skill: 6, isActive: true, createdAt: 1017 },
+  { id: 'p18', name: 'Nadin', skill: 6, isActive: true, createdAt: 1018 },
+  { id: 'p19', name: 'Raphael', skill: 8, isActive: true, createdAt: 1019 },
+  { id: 'p20', name: 'Rene', skill: 7, isActive: true, createdAt: 1020 },
+  { id: 'p21', name: 'Ron', skill: 5, isActive: true, createdAt: 1021 },
+  { id: 'p22', name: 'Sara', skill: 4, isActive: true, createdAt: 1022 },
+  { id: 'p23', name: 'Simone', skill: 5, isActive: true, createdAt: 1023 },
+  { id: 'p24', name: 'Sonja', skill: 4, isActive: true, createdAt: 1024 },
+  { id: 'p25', name: 'Steffen', skill: 10, isActive: true, createdAt: 1025 },
+  { id: 'p26', name: 'Susanne', skill: 6, isActive: true, createdAt: 1026 },
+  { id: 'p27', name: 'Svenja', skill: 5, isActive: true, createdAt: 1027 },
+  { id: 'p28', name: 'Timo', skill: 10, isActive: true, createdAt: 1028 },
+  { id: 'p29', name: 'Lena', skill: 4, isActive: true, createdAt: 1029 },
+  { id: 'p30', name: 'Fabio', skill: 4, isActive: true, createdAt: 1030 },
+  { id: 'p31', name: 'Florian', skill: 4, isActive: true, createdAt: 1031 },
+  { id: 'p32', name: 'Jens', skill: 4, isActive: true, createdAt: 1032 },
+  { id: 'p33', name: 'Jihan', skill: 4, isActive: true, createdAt: 1033 },
+  { id: 'p34', name: 'Justin', skill: 9, isActive: true, createdAt: 1034 },
+  { id: 'p35', name: 'Nasser', skill: 5, isActive: true, createdAt: 1035 },
+  { id: 'p36', name: 'Felix', skill: 6, isActive: true, createdAt: 1036 },
+  { id: 'p37', name: 'Robin', skill: 8, isActive: true, createdAt: 1037 },
+  { id: 'p38', name: 'Tobi', skill: 6, isActive: true, createdAt: 1038 },
+  { id: 'p39', name: 'Nils', skill: 10, isActive: true, createdAt: 1039 },
+  { id: 'p40', name: 'Lisa', skill: 4, isActive: true, createdAt: 1040 },
+  { id: 'p41', name: 'Nico', skill: 9, isActive: true, createdAt: 1041 },
+  { id: 'p42', name: 'Toni', skill: 8, isActive: true, createdAt: 1042 }
 ];
 
 /**
  * Lädt die Spielerliste aus dem LocalStorage.
- * Falls leer, werden die Demo-Spieler initialisiert.
+ * Falls leer oder veralteter 16er-Demo-Kader vorhanden, wird der neue 42er-Kader geladen.
  */
 export function loadPlayers(): Player[] {
   try {
@@ -55,7 +81,13 @@ export function loadPlayers(): Player[] {
       savePlayers(DEFAULT_DEMO_PLAYERS);
       return DEFAULT_DEMO_PLAYERS;
     }
-    return JSON.parse(raw);
+    const parsed: Player[] = JSON.parse(raw);
+    // Sanfte automatische Migration: Falls noch der alte generische 16er-Demo-Kader im LocalStorage liegt
+    if (parsed.length === 16 && parsed[0]?.name === 'Alex M.' && parsed[15]?.name === 'Petra G.') {
+      savePlayers(DEFAULT_DEMO_PLAYERS);
+      return DEFAULT_DEMO_PLAYERS;
+    }
+    return parsed;
   } catch (err) {
     console.error('Fehler beim Laden der Spielerdaten:', err);
     return DEFAULT_DEMO_PLAYERS;
