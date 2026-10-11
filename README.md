@@ -26,6 +26,12 @@ Entwickelt für Trainer und Trainingsvertretungen, um in der Sporthalle innerhal
 - **Teilzeit-Teilnahmen & Spontanausfall-Assistent:**
   - Spieler können flexibel für einzelne Runden (Runde 1, 2 oder 3) an- oder abgemeldet werden.
   - **1-Klick-Ausfallassistent:** Verletzt sich jemand oder geht früher, werden die restlichen Runden sofort neu berechnet; bereits gespielte Runden bleiben erhalten. Die Spielerauswahl zeigt nur die in der Runde tatsächlich aktiven Personen an.
+- **Gastspieler-Modus ("Gäste"):**
+  - Schnelle Erfassung von Gästen und Schnupper-Teilnehmern mit automatischer Paarungspräferenz mit dem einladenden Freund (Host) und 100 % Wertungsschutz.
+  - Option zur 1-Klick-Übernahme als Vereinsmitglied.
+- **Ergebniserfassung & Selbsteinstufungssystem:**
+  - Optionale Ergebniserfassung aus Runde 1 mit 3-Stufen-Signalmodell und Erwartungskorrektur.
+  - Vorschlagssystem zur Trainer-Freigabe für Feinanpassungen (max. ±1.5) ohne automatische Sprünge.
 - **PWA & Offline Service Worker:**
   - Automatische Offline-Verfügbarkeit dank Service Worker Caching (`vite-plugin-pwa`). Funktioniert auch im tiefsten Funkloch moderner Stahlbeton-Sporthallen.
   - Auf dem Smartphone (iOS / Android) direkt zum Home-Bildschirm als App hinzufügbar mit individuellem App-Icon (`apple-touch-icon.png`, `badminton-shuttle.svg`).
@@ -33,6 +39,13 @@ Entwickelt für Trainer und Trainingsvertretungen, um in der Sporthalle innerhal
   - Geht der Trainer in Urlaub oder ist krank, erzeugt ein Klick auf *"Daten verschlüsselt exportieren"* eine mit **AES-GCM (256-Bit)** und Passwort geschützte Sicherungsdatei (`.enc`).
   - Diese kann bedenkenlos per Messenger an die Vertretung geschickt werden.
   - Die Vertretung öffnet die Web-App auf dem eigenen Smartphone, gibt das Passwort ein und hat sofort denselben Datenstand.
+
+---
+
+## 📖 Dokumentation & Handbuch
+
+- 📘 **[Ausführliches Handbuch (HANDBUCH.md)](file:///c:/Users/claus/Documents/Badminton/HANDBUCH.md)** – Leitfaden für Trainer und Vertretungen zu Trainingsablauf, Modi, Gästen und Einstufungen.
+- 📋 **[To-Do & Feature-Roadmap (TODO.md)](file:///c:/Users/claus/Documents/Badminton/TODO.md)** – Geplante Features (z. B. Turniermodus, Timer, Basiswert-Übernahme).
 
 ---
 
@@ -60,7 +73,7 @@ Anschließend die im Terminal angezeigte URL (z. B. `http://localhost:5173`) im 
 
 ### Automatisierte Tests ausführen
 ```bash
-# Führt alle 23 Vitest-Unittests aus
+# Führt alle 45 Vitest-Unittests aus
 npm run test
 ```
 
@@ -78,5 +91,5 @@ Die fertige, statische PWA-Web-App liegt im Ordner `dist/` und wird automatisch 
 - **Styling:** Tailwind CSS v4 (Touch-optimierte Bedienelemente für Einhandbedienung am Spielfeldrand)
 - **Offline / PWA:** Vite PWA mit Service Worker Cache-First-Strategie und Web App Manifest
 - **Kryptografie:** Web Crypto API (`SubtleCrypto` AES-GCM 256-Bit mit PBKDF2, 100.000 Iterationen)
-- **Testing:** 23 automatisierte Unittests mit Vitest für mathematische Paarungsbalance, Historien-Strafen, Trainer-Joker-Eindeutigkeit, Trainer-Challenge und Speicherpersistenz.
+- **Testing:** 45 automatisierte Unittests mit Vitest für mathematische Paarungsbalance, Historien-Strafen, Trainer-Joker-Eindeutigkeit, Trainer-Challenge, Gastspieler-Logik, Selbsteinstufung und Speicherpersistenz.
 - **Git & Deployment:** Sichere Authentifizierung via SSH-Keys und automatisches CI/CD-Deployment über GitHub Actions.
