@@ -165,3 +165,12 @@ Die Web-App ist eine vollwertige **Progressive Web App (PWA)**:
 - **Als App auf dem Handy installieren:**
   - **iOS (Safari):** Teilen-Button antippen ➔ *„Zum Home-Bildschirm“*.
   - **Android (Chrome):** Menü (Drei Punkte) ➔ *„App installieren“* oder *„Zum Startbildschirm hinzufügen“*.
+
+### Automatische Updates & Versionierung
+- **Kryptografische Dateiprüfung:** Bei jedem Build erhält jede Datei eine neue Revisions-Prüfsumme. Der Service Worker prüft bei bestehender Internetverbindung im Hintergrund, ob eine neue Version auf dem Server liegt.
+- **Automatischer Check bei App-Öffnung:** Sobald die App auf dem Smartphone geöffnet oder aus dem Ruhezustand geholt wird (`visibilitychange`), wird online nach Updates gesucht.
+- **Update-Banner:** Steht eine neue Version bereit, erscheint oben am Bildschirm ein grünes Banner:  
+  **„Neue App-Version online verfügbar! [Jetzt aktualisieren]“**.  
+  Ein Fingertipp lädt die App blitzschnell mit dem neuesten Code neu.
+- **Manueller Check:** Ganz unten im Footer gibt es den Button **„Nach Updates suchen“**, mit dem man die Prüfung sofort manuell anstoßen kann.
+- **Tipp für iOS (iPhone):** Falls Safari eine alte Version im Zwischenspeicher festhält: Die App im iOS-App-Switcher (Geste von unten nach oben) einmal komplett nach oben wegwischen und neu vom Startbildschirm öffnen.

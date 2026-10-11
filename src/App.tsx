@@ -10,6 +10,7 @@ import { Navbar, ActiveTab } from './components/Navbar';
 import { TrainingView } from './components/TrainingView';
 import { PlayerManagement } from './components/PlayerManagement';
 import { TransferView } from './components/TransferView';
+import { PwaUpdateBanner } from './components/PwaUpdateBanner';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('training');
@@ -58,6 +59,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+      {/* PWA Update Banner (wenn online eine neue Version bereitsteht) */}
+      <PwaUpdateBanner />
+
       {/* Mobile-optimierte Sticky Header Bar */}
       <Navbar
         activeTab={activeTab}
@@ -91,9 +95,31 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="py-4 text-center text-xs text-slate-400 border-t border-slate-200">
-        Badminton Matchmaker • Phase 1 MVP • 100 % Offline im Browser
+      {/* Footer mit Update-Prüfung */}
+      <footer className="py-4 text-center text-xs text-slate-400 border-t border-slate-200 space-y-1">
+        <div>Badminton Matchmaker • v1.1 • 100 % Offline im Browser</div>
+        <div>
+          <button
+            onClick={() => {
+              if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistration().then(reg => {
+                  if (reg) {
+                    reg.update().then(() => {
+                      alert('Suche nach Updates abgeschlossen. Falls eine neue Version vorliegt, erscheint oben ein Update-Banner.');
+                    });
+                  } else {
+                    window.location.reload();
+                  }
+                });
+              } else {
+                window.location.reload();
+              }
+            }}
+            className="text-[11px] text-slate-400 hover:text-emerald-600 underline transition cursor-pointer"
+          >
+            Nach Updates suchen
+          </button>
+        </div>
       </footer>
     </div>
   );
