@@ -9,7 +9,10 @@ import {
   saveActiveSession,
   clearActiveSession,
   loadTournamentConfig,
-  saveTournamentConfig
+  saveTournamentConfig,
+  generateCompactQRPayload,
+  parseAndImportCompactQRPayload,
+  QR_TRANSFER_PREFIX
 } from './storage';
 import { Player } from '../types';
 
@@ -171,5 +174,63 @@ describe('Storage Service & Encrypted Transfer', () => {
     expect(loaded.isActive).toBe(true);
     expect(loaded.type).toBe('schleifchen');
     expect(loaded.schleifchenPlayerIds).toEqual(['p1', 'p2', 'p3']);
+  });
+
+  describe('QR-Code Schnellübertragung', () => {
+    it('sollte einen kompakten QR-Payload erzeugen und vollständig importieren', () => {
+      // 1. Individuelle Spieler und Daten anlegen
+      const customPlayers: Player[] = [
+        { id: 'siggi', name: 'Siggi', skill: 7, skillAdjustment: 0.3, isActive: true, createdAt: 100 },
+        { id: 'claus', name: 'Claus', skill: 9, isActive: true, createdAt: 101 },
+        { id: 'gast1', name: 'Lukas Gast', skill: 5, isActive: true, isGuest: true, invitedByPlayerId: 'claus', createdAt: 102 }
+      ];
+      savePlayers(customPlayers);
+
+      const tournament = {
+        isActive: true,
+        type: 'doubles' as const,
+        tournamentDate: '2099-10-10',
+        title: 'Kreis-Doppel 2099',
+        pairs: [{ id: 'p1', player1Id: 'siggi', player2Id: 'claus' }],
+        schleifchenPlayerIds: []
+      };
+      saveTournamentConfig(tournament);
+
+      // 2. QR Payload generieren
+      const qrPayload = generateCompactQRPayload();
+      expect(qrPayload.startsWith(QR_TRANSFER_PREFIX)).toBe(true);
+      expect(qrPayload.length).toBeLessThan(1500); // Garantiert extrem kompakt für QR-Codes!
+
+      // 3. Speicher leeren (wie auf dem Handy der Urlaubsvertretung)
+      store = {};
+      expect(loadPlayers()).toHaveLength(42); // Default Demo
+
+      // 4. Importieren aus QR-Payload
+      const result = parseAndImportCompactQRPayload(qrPayload);
+      expect(result.playersCount).toBe(3);
+      expect(result.tournamentImported).toBe(true);
+
+      const restoredPlayers = loadPlayers();
+      expect(restoredPlayers).toHaveLength(3);
+      expect(restoredPlayers[0].name).toBe('Siggi');
+      expect(restoredPlayers[0].skillAdjustment).toBe(0.3);
+      expect(restoredPlayers[2].isGuest).toBe(true);
+      expect(restoredPlayers[2].invitedByPlayerId).toBe('claus');
+
+      const restoredTournament = loadTournamentConfig();
+      expect(restoredTournament.isActive).toBe(true);
+      expect(restoredTournament.title).toBe('Kreis-Doppel 2099');
+      expect(restoredTournament.pairs).toHaveLength(1);
+    });
+
+    it('sollte fremde oder ungültige QR-Codes ablehnen', () => {
+      expect(() => {
+        parseAndImportCompactQRPayload('https://example.com/restaurant-menu');
+      }).toThrow('Ungültiger QR-Code');
+
+      expect(() => {
+        parseAndImportCompactQRPayload(`${QR_TRANSFER_PREFIX}definitiv-keine-gueltigen-daten`);
+      }).toThrow();
+    });
   });
 });

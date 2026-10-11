@@ -169,16 +169,30 @@ Im Tab **„Spieler“** werden alle Mitglieder verwaltet:
 
 ---
 
-## 9. Datensicherung, Verschlüsselung & Vertretung
+## 9. Datensicherung, Urlaubsvertretung & QR-Code Schnellübergabe
 
-Alle Daten liegen im lokalen Speicher des Browsers (`localStorage`).
+Alle Daten liegen im lokalen Speicher des Browsers (`localStorage`). Es gibt zwei Wege, um der Urlaubsvertretung den aktuellen Datenstand (Spieler, Stärken, Formwerte, Historie und Turniereinstellungen) zu übergeben:
 
-### Verschlüsselter Vertretungs-Transfer (DSGVO-konform)
-1. Im Tab **„Datensicherung“** auf **„Daten verschlüsselt exportieren“** klicken.
+### Methode 1: 📱 Schnellübergabe per QR-Code (Empfohlen – Direkt in der Halle)
+Die eleganteste und schnellste Methode – ganz ohne Datei, USB-Stick, WhatsApp oder E-Mail:
+1. **Trainer (geht in den Urlaub):**
+   - Öffnet den Tab **„Datensicherung“**.
+   - Tippt auf **„QR-Code anzeigen“**.
+   - Auf dem Bildschirm erscheint ein hochkompakter, optimierter QR-Code mit der gesamten Datenbank (alle Vereinsmitglieder, Stärken, Trendwerte & Turniermodus).
+2. **Vertretung (übernimmt das Training):**
+   - Öffnet die Badminton Matchmaker Web-App auf dem eigenen Smartphone.
+   - Geht in den Tab **„Datensicherung“** und tippt auf **„Kamera öffnen & scannen“**.
+   - Hält die Smartphone-Kamera kurz vor das Display des Trainers.
+   - **Fertig!** Das Handy vibriert kurz zur Bestätigung, und der gesamte Datenstand ist in unter einer Sekunde synchronisiert.
+3. *Fallback:* Sollte die Kamera blockiert sein, kann die Vertretung alternativ einen Screenshot/Foto aus der Galerie auswählen oder den kompakten Code per Text einfügen.
+
+### Methode 2: 🔒 Verschlüsselter Datei-Transfer (.enc) (Aus der Ferne / WhatsApp)
+Ideal, wenn die Übergabe nicht persönlich in der Sporthalle stattfindet:
+1. Im Tab **„Datensicherung“** den Bereich **„Daten verschlüsselt exportieren“** wählen.
 2. Ein sicheres Übergabe-Passwort vergeben.
-3. Die heruntergeladene Datei (`badminton-backup-....enc`) ist per **AES-GCM (256-Bit, PBKDF2 mit 100.000 Iterationen)** militärsicher verschlüsselt.
-4. Datei per WhatsApp, Signal oder E-Mail an die Vertretung schicken und das Passwort separat mitteilen.
-5. Die Vertretung öffnet die Web-App, wählt **„Backup importieren“**, gibt das Passwort ein und arbeitet mit dem exakten Datenstand weiter.
+3. Die heruntergeladene Datei (`badminton-backup-....enc`) ist per **AES-GCM (256-Bit, PBKDF2 mit 100.000 Iterationen)** nach modernsten Standards verschlüsselt (DSGVO-konform für Personennamen).
+4. Datei per WhatsApp, Signal oder E-Mail an die Vertretung schicken und das Passwort separat (z. B. per Telefon) mitteilen.
+5. Die Vertretung wählt im selben Menü **„Backup entschlüsseln & importieren“**, lädt die Datei hoch, gibt das Passwort ein und arbeitet mit dem exakten Datenstand weiter.
 
 ---
 

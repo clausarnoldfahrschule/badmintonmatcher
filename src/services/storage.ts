@@ -7,6 +7,7 @@
 
 import { Player, HistoricalPairing, BackupData, SessionPlan, TournamentConfig } from '../types';
 import { encryptData, decryptData } from '../utils/crypto';
+import LZString from 'lz-string';
 
 const STORAGE_KEYS = {
   PLAYERS: 'badminton_players_v1',
@@ -294,4 +295,157 @@ export function clearActiveSession(): void {
   } catch (err) {
     console.error('Fehler beim Zurücksetzen der Sitzung:', err);
   }
+}
+
+export const QR_TRANSFER_PREFIX = 'BMM:1:';
+
+/**
+ * Erzeugt einen ultrakompakten, komprimierten QR-Code-Payload für die direkte
+ * Urlaubsübergabe von Smartphone zu Smartphone via Display-Scan.
+ */
+export function generateCompactQRPayload(): string {
+  const players = loadPlayers();
+  const history = loadHistory();
+  const trainerSkill = loadTrainerSkill();
+  const tournamentConfig = loadTournamentConfig();
+
+  // Kompakter Spieler-Datensatz: [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId]
+  const compactPlayers = players.map(p => [
+    p.id,
+    p.name,
+    p.skill,
+    p.skillAdjustment ?? 0,
+    p.isActive ? 1 : 0,
+    p.isGuest ? 1 : 0,
+    p.invitedByPlayerId || ''
+  ]);
+
+  // Neueste Historie (bis zu 12 Einheiten / 36 Runden reichen für Wiederholungs-Strafen vollkommen aus)
+  const recentHistory = history.slice(-12).map(h => [
+    h.date,
+    h.roundNumber,
+    Object.entries(h.partnerMap || {}),
+    Object.entries(h.opponentsMap || {})
+  ]);
+
+  // Turniermodus (falls konfiguriert)
+  const compactTournament = tournamentConfig.isActive ? {
+    a: true,
+    t: tournamentConfig.type === 'schleifchen' ? 's' : 'd',
+    d: tournamentConfig.tournamentDate || '',
+    n: tournamentConfig.title || '',
+    p: (tournamentConfig.pairs || []).map(pair => [pair.player1Id, pair.player2Id]),
+    s: tournamentConfig.schleifchenPlayerIds || []
+  } : undefined;
+
+  const payload = {
+    v: 1,
+    t: Date.now(),
+    ts: trainerSkill,
+    p: compactPlayers,
+    h: recentHistory,
+    tc: compactTournament
+  };
+
+  const json = JSON.stringify(payload);
+  const compressed = LZString.compressToBase64(json);
+  return `${QR_TRANSFER_PREFIX}${compressed}`;
+}
+
+/**
+ * Liest einen gescannten QR-Code-String ein, dekomprimiert die Daten und übernimmt
+ * sie in den lokalen Speicher.
+ */
+export function parseAndImportCompactQRPayload(qrString: string): {
+  playersCount: number;
+  historyCount: number;
+  tournamentImported: boolean;
+} {
+  const trimmed = qrString.trim();
+  if (!trimmed.startsWith(QR_TRANSFER_PREFIX)) {
+    throw new Error('Ungültiger QR-Code. Bitte scanne den Übergabe-Code aus der Badminton Matchmaker App.');
+  }
+
+  const base64Data = trimmed.slice(QR_TRANSFER_PREFIX.length);
+  const decompressed = LZString.decompressFromBase64(base64Data);
+
+  if (!decompressed) {
+    throw new Error('Die Daten im QR-Code konnten nicht dekomprimiert werden.');
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(decompressed);
+  } catch {
+    throw new Error('Der Inhalt des QR-Codes ist beschädigt.');
+  }
+
+  if (!payload || payload.v !== 1 || !Array.isArray(payload.p)) {
+    throw new Error('Das Datenformat im QR-Code ist nicht kompatibel.');
+  }
+
+  // 1. Spieler wiederherstellen
+  const players: Player[] = payload.p.map((item: any[]) => {
+    const [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId] = item;
+    return {
+      id: String(id),
+      name: String(name),
+      skill: Number(skill),
+      skillAdjustment: skillAdjustment ? Number(skillAdjustment) : undefined,
+      isActive: Boolean(isActive),
+      isGuest: Boolean(isGuest),
+      invitedByPlayerId: invitedByPlayerId ? String(invitedByPlayerId) : undefined,
+      createdAt: Date.now()
+    };
+  });
+
+  savePlayers(players);
+
+  // 2. Trainer-Stärke
+  if (typeof payload.ts === 'number') {
+    saveTrainerSkill(payload.ts);
+  }
+
+  // 3. Historie wiederherstellen
+  let historyCount = 0;
+  if (Array.isArray(payload.h)) {
+    const restoredHistory: HistoricalPairing[] = payload.h.map((hItem: any[]) => {
+      const [date, roundNumber, partnerEntries, opponentEntries] = hItem;
+      return {
+        date: String(date),
+        roundNumber: Number(roundNumber),
+        partnerMap: Object.fromEntries(partnerEntries || []),
+        opponentsMap: Object.fromEntries(opponentEntries || [])
+      };
+    });
+    saveHistory(restoredHistory);
+    historyCount = restoredHistory.length;
+  }
+
+  // 4. Turniermodus
+  let tournamentImported = false;
+  if (payload.tc) {
+    const tc = payload.tc;
+    saveTournamentConfig({
+      isActive: Boolean(tc.a),
+      type: tc.t === 's' ? 'schleifchen' : 'doubles',
+      tournamentDate: tc.d || '',
+      title: tc.n || '',
+      pairs: Array.isArray(tc.p)
+        ? tc.p.map((pPair: [string, string], idx: number) => ({
+            id: `qr-tp-${idx}`,
+            player1Id: pPair[0],
+            player2Id: pPair[1]
+          }))
+        : [],
+      schleifchenPlayerIds: Array.isArray(tc.s) ? tc.s : []
+    });
+    tournamentImported = Boolean(tc.a);
+  }
+
+  return {
+    playersCount: players.length,
+    historyCount,
+    tournamentImported
+  };
 }
