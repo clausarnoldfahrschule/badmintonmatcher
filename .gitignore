@@ -30,3 +30,8 @@ dist-ssr
 
 # Build artifacts
 *.tsbuildinfo
+
+# Local CSV data / private player lists
+*.csv
+*stärken*
+*staerken*
