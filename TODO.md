@@ -4,14 +4,15 @@ Diese Roadmap dokumentiert angedachte und geplante Erweiterungen für den **Badm
 
 ---
 
-## 🏆 1. Turniermodus (Turniervorbereitung)
-**Status:** Geplant / Hohe Priorität  
-**Konzept:**
-- Kurz vor offiziellen Turnieren oder Meisterschaften sollen gemeldete Doppelpaare („Turnierpaare“) gezielt miteinander trainieren können.
-- **Funktionsweise:**
-  - Im Trainingsbereich können feste Doppelpaare für den Abend definiert oder markiert werden.
-  - Die Paarungs-Engine hebt für diese Paare die Trennungs- und Wiederholungsregeln auf: Sie spielen alle Runden zusammen als festes Team.
-  - Gegner-Zuweisung: Die Engine lost gezielt gleich starke oder bewusst stärkere Doppel als Gegner zu, um Matchpraxis und Wettkampfhärte zu trainieren.
+## ✅ 1. Turniermodus (Turniervorbereitung)
+**Status:** Vollständig umgesetzt & aktiv 🏆  
+**Umsetzung:**
+- **Zwei Turniermodi:**
+  1. **Doppel- & Mixed-Turnier:** Feste Paarungen trainieren gezielt zusammen. Mehrfachmeldungen (Überschneidungen) werden automatisch intelligent über Runden verteilt (z. B. Claus mit Simone in R1 und Claus mit Nico in R2/R3).
+  2. **Schleifchenturnier:** Gemeldete Spieler erhalten an jedem Trainingsabend 2 fordernde Spiele gegen ebenbürtige oder stärkere Gegner.
+- **Automatische Deaktivierung:** Nach Ablauf des eingetragenen Turnierdatums schaltet sich der Modus automatisch ab.
+- **Optische Kennzeichnung:** Spielfelder mit Turnierspielen tragen ein goldenes `🏆 Turnier`-Badge.
+- **Datensicherung:** Die Turnierkonfiguration wird verschlüsselt im Backup-Transfer mitgesichert.
 
 ---
 

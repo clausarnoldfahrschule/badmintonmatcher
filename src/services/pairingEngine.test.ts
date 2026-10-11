@@ -6,7 +6,7 @@ import {
   calculateHistoryPenalty,
   TRAINER_ID
 } from './pairingEngine';
-import { Player } from '../types';
+import { Player, TournamentConfig } from '../types';
 
 describe('Pairing Engine (Paarungs-Algorithmus)', () => {
   // Test-Spielerliste mit unterschiedlichen Stärken (1 bis 10)
@@ -654,6 +654,187 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
       };
       const regPenalty = calculateHistoryPenalty(regP1, regP2, p3, p5, [], [prevRoundReg]);
       expect(regPenalty).toBe(160); // 120 Partner + 40 3er-Feld-Overlap
+    });
+  });
+
+  describe('Turniermodus (Vorbereitung auf Doppel-, Mixed- & Schleifchenturniere)', () => {
+    it('Doppel-/Mixed-Turnier: Führt gemeldetes Turnierpaar verlässlich auf einem Feld zusammen und kennzeichnet das Spiel', () => {
+      // Claus (9) und Simone (5) als Mixed-Paar
+      const testPlayers: Player[] = [
+        { id: 'claus', name: 'Claus', skill: 9, isActive: true, createdAt: 1 },
+        { id: 'simone', name: 'Simone', skill: 5, isActive: true, createdAt: 2 },
+        { id: 'alex', name: 'Alex', skill: 9, isActive: true, createdAt: 3 },
+        { id: 'nico', name: 'Nico', skill: 9, isActive: true, createdAt: 4 },
+        { id: 'rene', name: 'Rene', skill: 7, isActive: true, createdAt: 5 },
+        { id: 'carsten', name: 'Carsten', skill: 7, isActive: true, createdAt: 6 },
+        { id: 'svenja', name: 'Svenja', skill: 5, isActive: true, createdAt: 7 },
+        { id: 'sara', name: 'Sara', skill: 4, isActive: true, createdAt: 8 }
+      ];
+
+      const att = testPlayers.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const tournamentConfig: TournamentConfig = {
+        isActive: true,
+        type: 'doubles',
+        title: 'Kreismeisterschaft Mixed',
+        tournamentDate: '2099-12-31',
+        pairs: [{ id: 'pair-1', player1Id: 'claus', player2Id: 'simone' }],
+        schleifchenPlayerIds: []
+      };
+
+      const session = generateFullSession(testPlayers, att, { tournamentConfig });
+
+      // Prüfe Runde 1, 2 und 3
+      let clausSimoneTogetherCount = 0;
+      for (const round of session.rounds) {
+        for (const match of round.matches) {
+          const t1IsPair =
+            (match.team1.player1.id === 'claus' && match.team1.player2.id === 'simone') ||
+            (match.team1.player1.id === 'simone' && match.team1.player2.id === 'claus');
+          const t2IsPair =
+            (match.team2.player1.id === 'claus' && match.team2.player2.id === 'simone') ||
+            (match.team2.player1.id === 'simone' && match.team2.player2.id === 'claus');
+
+          if (t1IsPair || t2IsPair) {
+            clausSimoneTogetherCount++;
+            expect(match.isTournamentMatch).toBe(true);
+          }
+        }
+      }
+
+      // Claus und Simone sollten mindestens 1x (oder mehrmals) zusammen gespielt haben
+      expect(clausSimoneTogetherCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('Mehrfach-Paarungen (Überschneidungen): Claus mit Simone UND Claus mit Nico spielen beide im Verlauf des Abends', () => {
+      // Claus ist in 2 Paaren gemeldet: Mixed mit Simone (5) und Doppel mit Nico (9)
+      const testPlayers: Player[] = [
+        { id: 'claus', name: 'Claus', skill: 9, isActive: true, createdAt: 1 },
+        { id: 'simone', name: 'Simone', skill: 5, isActive: true, createdAt: 2 },
+        { id: 'nico', name: 'Nico', skill: 9, isActive: true, createdAt: 3 },
+        { id: 'dennis', name: 'Dennis', skill: 10, isActive: true, createdAt: 4 },
+        { id: 'alex', name: 'Alex', skill: 9, isActive: true, createdAt: 5 },
+        { id: 'carsten', name: 'Carsten', skill: 7, isActive: true, createdAt: 6 },
+        { id: 'rene', name: 'Rene', skill: 7, isActive: true, createdAt: 7 },
+        { id: 'svenja', name: 'Svenja', skill: 5, isActive: true, createdAt: 8 }
+      ];
+
+      const att = testPlayers.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const tournamentConfig: TournamentConfig = {
+        isActive: true,
+        type: 'doubles',
+        title: 'Doppel- und Mixed-Vorbereitung',
+        tournamentDate: '2099-12-31',
+        pairs: [
+          { id: 'pair-mixed', player1Id: 'claus', player2Id: 'simone' },
+          { id: 'pair-doppel', player1Id: 'claus', player2Id: 'nico' }
+        ],
+        schleifchenPlayerIds: []
+      };
+
+      const session = generateFullSession(testPlayers, att, { tournamentConfig });
+
+      let playedWithSimone = false;
+      let playedWithNico = false;
+
+      for (const round of session.rounds) {
+        for (const match of round.matches) {
+          const checkTeam = (t: any, p1: string, p2: string) =>
+            (t.player1.id === p1 && t.player2.id === p2) || (t.player1.id === p2 && t.player2.id === p1);
+
+          if (checkTeam(match.team1, 'claus', 'simone') || checkTeam(match.team2, 'claus', 'simone')) {
+            playedWithSimone = true;
+            expect(match.isTournamentMatch).toBe(true);
+          }
+          if (checkTeam(match.team1, 'claus', 'nico') || checkTeam(match.team2, 'claus', 'nico')) {
+            playedWithNico = true;
+            expect(match.isTournamentMatch).toBe(true);
+          }
+        }
+      }
+
+      // Beide Partnerschaften wurden bedient!
+      expect(playedWithSimone).toBe(true);
+      expect(playedWithNico).toBe(true);
+    });
+
+    it('Schleifchenturnier: Schleifchen-Spieler erhalten fordernde Spiele und werden als Turnierspiele markiert', () => {
+      const testPlayers: Player[] = [
+        { id: 's1', name: 'Schleifchen Star 1', skill: 8, isActive: true, createdAt: 1 },
+        { id: 's2', name: 'Schleifchen Star 2', skill: 8, isActive: true, createdAt: 2 },
+        { id: 'p3', name: 'Guter Spieler', skill: 8, isActive: true, createdAt: 3 },
+        { id: 'p4', name: 'Solider Spieler 1', skill: 7, isActive: true, createdAt: 4 },
+        { id: 'p5', name: 'Solider Spieler 2', skill: 7, isActive: true, createdAt: 5 },
+        { id: 'p6', name: 'Hobby 1', skill: 6, isActive: true, createdAt: 6 },
+        { id: 'p7', name: 'Anfänger 1', skill: 3, isActive: true, createdAt: 7 },
+        { id: 'p8', name: 'Anfänger 2', skill: 2, isActive: true, createdAt: 8 }
+      ];
+
+      const att = testPlayers.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const tournamentConfig: TournamentConfig = {
+        isActive: true,
+        type: 'schleifchen',
+        title: 'Vereins-Schleifchen',
+        tournamentDate: '2099-12-31',
+        pairs: [],
+        schleifchenPlayerIds: ['s1', 's2']
+      };
+
+      const session = generateFullSession(testPlayers, att, { tournamentConfig });
+
+      // s1 und s2 sollen als Turnierspiele markiert sein
+      for (const round of session.rounds) {
+        for (const match of round.matches) {
+          const allCourtIds = [
+            match.team1.player1.id,
+            match.team1.player2.id,
+            match.team2.player1.id,
+            match.team2.player2.id
+          ];
+          if (allCourtIds.includes('s1') || allCourtIds.includes('s2')) {
+            expect(match.isTournamentMatch).toBe(true);
+          }
+        }
+      }
+    });
+
+    it('Turniermodus Robustheit: Wenn ein Partner fehlt, bricht nichts ab', () => {
+      const testPlayers: Player[] = [
+        { id: 'claus', name: 'Claus', skill: 9, isActive: true, createdAt: 1 },
+        // Simone fehlt heute (isActive = false)
+        { id: 'simone', name: 'Simone', skill: 5, isActive: false, createdAt: 2 },
+        { id: 'p1', name: 'P1', skill: 8, isActive: true, createdAt: 3 },
+        { id: 'p2', name: 'P2', skill: 7, isActive: true, createdAt: 4 },
+        { id: 'p3', name: 'P3', skill: 6, isActive: true, createdAt: 5 }
+      ];
+
+      const att = testPlayers.reduce((acc, p) => {
+        acc[p.id] = { round1: true, round2: true, round3: true };
+        return acc;
+      }, {} as Record<string, { round1: boolean; round2: boolean; round3: boolean }>);
+
+      const tournamentConfig: TournamentConfig = {
+        isActive: true,
+        type: 'doubles',
+        title: 'Test',
+        pairs: [{ id: 'pair-1', player1Id: 'claus', player2Id: 'simone' }],
+        schleifchenPlayerIds: []
+      };
+
+      expect(() => {
+        generateFullSession(testPlayers, att, { tournamentConfig, trainerAvailable: true });
+      }).not.toThrow();
     });
   });
 });

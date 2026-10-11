@@ -121,6 +121,11 @@ export const CourtCard: React.FC<CourtCardProps> = ({ match, onUpdateScore }) =>
               Niveau-Gleich
             </span>
           )}
+          {match.isTournamentMatch && (
+            <span className="flex items-center gap-1 text-[11px] bg-amber-400 text-amber-950 px-2 py-0.5 rounded-full font-extrabold shadow-xs">
+              <Trophy className="w-3 h-3 text-amber-950" /> Turnier
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1 text-xs font-medium text-emerald-100">

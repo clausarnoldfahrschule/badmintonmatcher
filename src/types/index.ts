@@ -85,6 +85,23 @@ export interface Team {
   totalSkill: number;
 }
 
+export type TournamentType = 'doubles' | 'schleifchen';
+
+export interface TournamentPair {
+  id: string;
+  player1Id: string;
+  player2Id: string;
+}
+
+export interface TournamentConfig {
+  isActive: boolean;
+  type: TournamentType;
+  tournamentDate?: string; // YYYY-MM-DD
+  title?: string;
+  pairs: TournamentPair[];
+  schleifchenPlayerIds: string[];
+}
+
 /**
  * Ein Doppel-Match auf einem Feld (Team 1 vs. Team 2)
  */
@@ -96,6 +113,7 @@ export interface Match {
   roundType: 'peer' | 'mentor' | 'social'; // Peer = Starke mit Starken, Mentor = Stark+Schwach
   skillDiff: number; // Differenz der Team-Gesamtstärken (sollte minimal sein)
   score?: MatchScore; // Optionales Ergebnis (vor allem für Runde 1)
+  isTournamentMatch?: boolean; // Kennzeichnet Vorbereitungsspiele für Turniere
 }
 
 /**
@@ -153,4 +171,5 @@ export interface BackupData {
   players: Player[];
   history: HistoricalPairing[];
   trainerSkill: number;
+  tournamentConfig?: TournamentConfig;
 }

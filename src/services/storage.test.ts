@@ -7,7 +7,9 @@ import {
   DEFAULT_DEMO_PLAYERS,
   loadActiveSession,
   saveActiveSession,
-  clearActiveSession
+  clearActiveSession,
+  loadTournamentConfig,
+  saveTournamentConfig
 } from './storage';
 import { Player } from '../types';
 
@@ -114,5 +116,60 @@ describe('Storage Service & Encrypted Transfer', () => {
 
     clearActiveSession();
     expect(loadActiveSession()).toBeNull();
+  });
+
+  it('sollte Turnier-Konfiguration speichern und laden', () => {
+    const config = {
+      isActive: true,
+      type: 'doubles' as const,
+      tournamentDate: '2099-12-31',
+      title: 'Vereinsmeisterschaft',
+      pairs: [{ id: 'pair-1', player1Id: 'p1', player2Id: 'p2' }],
+      schleifchenPlayerIds: []
+    };
+    saveTournamentConfig(config);
+    const loaded = loadTournamentConfig();
+    expect(loaded.isActive).toBe(true);
+    expect(loaded.title).toBe('Vereinsmeisterschaft');
+    expect(loaded.pairs).toHaveLength(1);
+    expect(loaded.pairs[0].player1Id).toBe('p1');
+  });
+
+  it('sollte Turniermodus automatisch deaktivieren, wenn das Datum in der Vergangenheit liegt', () => {
+    const pastConfig = {
+      isActive: true,
+      type: 'doubles' as const,
+      tournamentDate: '2020-01-01', // weit in der Vergangenheit
+      title: 'Vergangenes Turnier',
+      pairs: [{ id: 'pair-1', player1Id: 'p1', player2Id: 'p2' }],
+      schleifchenPlayerIds: []
+    };
+    saveTournamentConfig(pastConfig);
+    const loaded = loadTournamentConfig();
+    expect(loaded.isActive).toBe(false);
+  });
+
+  it('sollte Turnier-Konfiguration im verschlüsselten Backup mitnehmen', async () => {
+    const config = {
+      isActive: true,
+      type: 'schleifchen' as const,
+      tournamentDate: '2099-06-01',
+      title: 'Schleifchen Sommercup',
+      pairs: [],
+      schleifchenPlayerIds: ['p1', 'p2', 'p3']
+    };
+    saveTournamentConfig(config);
+
+    const password = 'TurnierBackupPasswort!';
+    const encrypted = await exportEncryptedBackup(password);
+
+    store = {};
+    expect(loadTournamentConfig().isActive).toBe(false);
+
+    await importEncryptedBackup(encrypted, password);
+    const loaded = loadTournamentConfig();
+    expect(loaded.isActive).toBe(true);
+    expect(loaded.type).toBe('schleifchen');
+    expect(loaded.schleifchenPlayerIds).toEqual(['p1', 'p2', 'p3']);
   });
 });

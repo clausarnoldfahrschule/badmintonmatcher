@@ -11,7 +11,7 @@
  * 7. Faire Pausen-Rotation bei Überhang
  */
 
-import { Player, Match, Team, RoundPlan, HistoricalPairing, SessionPlan, SinglesMatch } from '../types';
+import { Player, Match, Team, RoundPlan, HistoricalPairing, SessionPlan, SinglesMatch, TournamentConfig, TournamentPair } from '../types';
 
 export const TRAINER_ID = 'trainer-joker';
 
@@ -38,6 +38,129 @@ export interface GenerateRoundOptions {
   maxCourts?: number;
   historicalPairings?: HistoricalPairing[];
   previousRoundsCurrentSession?: RoundPlan[];
+  tournamentConfig?: TournamentConfig;
+}
+
+/**
+ * Prüft, ob zwei Spieler als festes Turnierpaar gemeldet sind
+ */
+export function isTournamentPair(
+  pA: Player | { id: string },
+  pB: Player | { id: string },
+  pairs?: TournamentPair[]
+): boolean {
+  if (!pairs || pairs.length === 0) return false;
+  return pairs.some(
+    pair =>
+      (pair.player1Id === pA.id && pair.player2Id === pB.id) ||
+      (pair.player1Id === pB.id && pair.player2Id === pA.id)
+  );
+}
+
+/**
+ * Wählt für eine Runde konfliktfreie Turnierpaare aus.
+ * Falls ein Spieler in mehreren Paaren gemeldet ist (z. B. Claus mit Simone und Claus mit Nico),
+ * erhält das Paar den Vorrang, das an diesem Abend noch seltener bzw. noch gar nicht zusammengespielt hat.
+ */
+export function getTargetTournamentPairsForRound(
+  tournamentConfig: TournamentConfig | undefined,
+  availablePlayers: Player[],
+  previousRounds: RoundPlan[]
+): TournamentPair[] {
+  if (!tournamentConfig || !tournamentConfig.isActive || tournamentConfig.type !== 'doubles') {
+    return [];
+  }
+
+  const availableIds = new Set(availablePlayers.map(p => p.id));
+
+  // Nur Paare, bei denen beide Spieler in dieser Runde anwesend sind
+  const eligiblePairs = (tournamentConfig.pairs || []).filter(
+    pair => availableIds.has(pair.player1Id) && availableIds.has(pair.player2Id)
+  );
+
+  if (eligiblePairs.length === 0) return [];
+
+  // Ermittle für jedes Paar, wie oft sie in bisherigen Runden dieses Abends zusammen gespielt haben
+  const countPlayed = (pair: TournamentPair): number => {
+    let count = 0;
+    for (const round of previousRounds) {
+      for (const match of round.matches) {
+        const t1 = match.team1;
+        const t2 = match.team2;
+        const playedInT1 =
+          (t1.player1.id === pair.player1Id && t1.player2.id === pair.player2Id) ||
+          (t1.player1.id === pair.player2Id && t1.player2.id === pair.player1Id);
+        const playedInT2 =
+          (t2.player1.id === pair.player1Id && t2.player2.id === pair.player2Id) ||
+          (t2.player1.id === pair.player2Id && t2.player2.id === pair.player1Id);
+        if (playedInT1 || playedInT2) {
+          count++;
+        }
+      }
+    }
+    return count;
+  };
+
+  // Sortiere Paare: Wer am wenigsten zusammengespielt hat, hat Vorrang
+  const sortedPairs = [...eligiblePairs].sort((a, b) => {
+    const countA = countPlayed(a);
+    const countB = countPlayed(b);
+    if (countA !== countB) return countA - countB;
+    return a.id.localeCompare(b.id);
+  });
+
+  // Wähle konfliktfreie Paare für diese Runde aus (kein Spieler darf in zwei Paaren gleichzeitig sein)
+  const selectedPairs: TournamentPair[] = [];
+  const assignedPlayerIds = new Set<string>();
+
+  for (const pair of sortedPairs) {
+    if (!assignedPlayerIds.has(pair.player1Id) && !assignedPlayerIds.has(pair.player2Id)) {
+      selectedPairs.push(pair);
+      assignedPlayerIds.add(pair.player1Id);
+      assignedPlayerIds.add(pair.player2Id);
+    }
+  }
+
+  return selectedPairs;
+}
+
+/**
+ * Führt gezielte Turnierpaare auf denselben Feldern zusammen, falls sie durch die
+ * initiale Stärke- oder Snake-Sortierung auf verschiedenen Feldern gelandet sind.
+ */
+export function uniteTournamentPairsOnCourts(
+  courts: [Player, Player, Player, Player][],
+  targetPairs: TournamentPair[]
+): void {
+  for (const pair of targetPairs) {
+    const c1Idx = courts.findIndex(c => c.some(p => p.id === pair.player1Id));
+    const c2Idx = courts.findIndex(c => c.some(p => p.id === pair.player2Id));
+
+    if (c1Idx !== -1 && c2Idx !== -1 && c1Idx !== c2Idx) {
+      const court1 = courts[c1Idx];
+      const court2 = courts[c2Idx];
+
+      const p2 = court2.find(p => p.id === pair.player2Id)!;
+      let bestSwapTargetIdx = -1;
+      let minDiff = Number.MAX_SAFE_INTEGER;
+
+      for (let i = 0; i < court1.length; i++) {
+        if (court1[i].id === pair.player1Id) continue;
+        const diff = Math.abs(getEffectiveSkill(court1[i]) - getEffectiveSkill(p2));
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestSwapTargetIdx = i;
+        }
+      }
+
+      if (bestSwapTargetIdx !== -1) {
+        const p2IdxInCourt2 = court2.findIndex(p => p.id === pair.player2Id);
+        const temp = court1[bestSwapTargetIdx];
+        court1[bestSwapTargetIdx] = court2[p2IdxInCourt2];
+        court2[p2IdxInCourt2] = temp;
+      }
+    }
+  }
 }
 
 /**
@@ -66,14 +189,16 @@ export function calculateHistoryPenalty(
   p3: Player,
   p4: Player,
   historicalPairings: HistoricalPairing[],
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  targetPairs: TournamentPair[] = []
 ): number {
   let penalty = 0;
 
-  // Für Gast und seinen einladenden Freund gilt die Wiederholungs-Strafe nicht,
-  // da der Gast primär mit oder gegen seinen Freund spielen möchte
+  // Für Gast & Freund sowie feste Turnierpaare gilt die Wiederholungs-Strafe nicht
   const isP1P2GuestHost = isGuestHostRelation(p1, p2);
   const isP3P4GuestHost = isGuestHostRelation(p3, p4);
+  const isP1P2Tourn = isTournamentPair(p1, p2, targetPairs);
+  const isP3P4Tourn = isTournamentPair(p3, p4, targetPairs);
 
   // 1. Prüfung in den bereits gespielten Runden des HEUTIGEN Abends
   for (const prevRound of previousRounds) {
@@ -85,9 +210,10 @@ export function calculateHistoryPenalty(
         match.team2.player2.id
       ];
 
-      // Gleiche Partner heute? (Sehr hohe Strafe: 120 Punkte - entfällt für Gast & Freund)
+      // Gleiche Partner heute? (Sehr hohe Strafe: 120 Punkte - entfällt für Gast & Freund sowie Turnierpaare)
       const t1TodaySame =
         !isP1P2GuestHost &&
+        !isP1P2Tourn &&
         ((match.team1.player1.id === p1.id && match.team1.player2.id === p2.id) ||
         (match.team1.player1.id === p2.id && match.team1.player2.id === p1.id) ||
         (match.team2.player1.id === p1.id && match.team2.player2.id === p2.id) ||
@@ -95,6 +221,7 @@ export function calculateHistoryPenalty(
 
       const t2TodaySame =
         !isP3P4GuestHost &&
+        !isP3P4Tourn &&
         ((match.team1.player1.id === p3.id && match.team1.player2.id === p4.id) ||
         (match.team1.player1.id === p4.id && match.team1.player2.id === p3.id) ||
         (match.team2.player1.id === p3.id && match.team2.player2.id === p4.id) ||
@@ -106,12 +233,13 @@ export function calculateHistoryPenalty(
       // Komplett gleiches 4er-Feld heute? (Zusatzstrafe: 40 Punkte)
       const overlapCount = [p1.id, p2.id, p3.id, p4.id].filter(id => matchPlayerIds.includes(id)).length;
       if (overlapCount >= 3) {
-        // Nicht bestrafen, wenn die Überschneidung durch die erwünschte Gast-Host-Kombination entsteht
-        const hasGuestHostPair =
+        // Nicht bestrafen, wenn die Überschneidung durch Gast-Host oder Turnierpaare entsteht
+        const hasSpecialPair =
           isP1P2GuestHost || isP3P4GuestHost ||
+          isP1P2Tourn || isP3P4Tourn ||
           isGuestHostRelation(p1, p3) || isGuestHostRelation(p1, p4) ||
           isGuestHostRelation(p2, p3) || isGuestHostRelation(p2, p4);
-        if (!hasGuestHostPair) {
+        if (!hasSpecialPair) {
           penalty += 40;
         }
       }
@@ -120,11 +248,11 @@ export function calculateHistoryPenalty(
 
   // 2. Prüfung in der Historie früherer Trainingsabende (Vorwochen)
   for (const history of historicalPairings) {
-    // Partner-Prüfung Vorwochen (Strafe: 40 Punkte - entfällt für Gast & Freund)
-    if (!isP1P2GuestHost && (history.partnerMap[p1.id] === p2.id || history.partnerMap[p2.id] === p1.id)) {
+    // Partner-Prüfung Vorwochen (Strafe: 40 Punkte - entfällt für Gast & Freund sowie Turnierpaare)
+    if (!isP1P2GuestHost && !isP1P2Tourn && (history.partnerMap[p1.id] === p2.id || history.partnerMap[p2.id] === p1.id)) {
       penalty += 40;
     }
-    if (!isP3P4GuestHost && (history.partnerMap[p3.id] === p4.id || history.partnerMap[p4.id] === p3.id)) {
+    if (!isP3P4GuestHost && !isP3P4Tourn && (history.partnerMap[p3.id] === p4.id || history.partnerMap[p4.id] === p3.id)) {
       penalty += 40;
     }
 
@@ -192,7 +320,9 @@ export function findBestCourtMatchWithCost(
   fourPlayers: [Player, Player, Player, Player],
   roundType: 'peer' | 'mentor' | 'social',
   historicalPairings: HistoricalPairing[],
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  tournamentConfig?: TournamentConfig,
+  targetPairs: TournamentPair[] = []
 ): { match: Match; cost: number } {
   // Drei Kombinationsmöglichkeiten für 4 Spieler [0, 1, 2, 3]:
   // Option A: (0, 1) vs (2, 3)
@@ -213,13 +343,17 @@ export function findBestCourtMatchWithCost(
     const p3 = fourPlayers[t2Indices[0]];
     const p4 = fourPlayers[t2Indices[1]];
 
-    // Im Mentor-Modus MUSS jedes Team aus einem stärkeren und einem schwächeren Spieler bestehen
+    const t1IsTourn = isTournamentPair(p1, p2, targetPairs);
+    const t2IsTourn = isTournamentPair(p3, p4, targetPairs);
+
+    // Im Mentor-Modus MUSS jedes Team aus einem stärkeren und einem schwächeren Spieler bestehen,
+    // es sei denn, beide Spieler bilden ein festes Turnierpaar (Ausnahme für Turnierpaare)
     if (roundType === 'mentor') {
       const sortedBySkill = [...fourPlayers].sort((a, b) => getEffectiveSkill(b) - getEffectiveSkill(a));
       const strongIds = new Set([sortedBySkill[0].id, sortedBySkill[1].id]);
       const t1HasStrong = strongIds.has(p1.id) || strongIds.has(p2.id);
       const t1HasWeak = !strongIds.has(p1.id) || !strongIds.has(p2.id);
-      if (!t1HasStrong || !t1HasWeak) continue;
+      if ((!t1HasStrong || !t1HasWeak) && !t1IsTourn && !t2IsTourn) continue;
     }
 
     const team1 = createTeam(p1, p2);
@@ -227,7 +361,7 @@ export function findBestCourtMatchWithCost(
     const skillDiff = Math.abs(team1.totalSkill - team2.totalSkill);
 
     // Strafpunkte aus der Historie (Wiederholungen vermeiden)
-    const historyPenalty = calculateHistoryPenalty(p1, p2, p3, p4, historicalPairings, previousRounds);
+    const historyPenalty = calculateHistoryPenalty(p1, p2, p3, p4, historicalPairings, previousRounds, targetPairs);
     const balancePenalty = calculateBalancePenalty(skillDiff);
 
     // Bonus, wenn Gast und einladender Freund auf demselben Feld stehen
@@ -241,11 +375,57 @@ export function findBestCourtMatchWithCost(
       guestBonus -= 50; // Als direkte Duell-Gegner auf demselben Feld
     }
 
+    // Turnier-Bonus / Strafe
+    let tournamentBonus = 0;
+    let isTournamentMatch = false;
+
+    if (t1IsTourn) {
+      tournamentBonus -= 160;
+      isTournamentMatch = true;
+    }
+    if (t2IsTourn) {
+      tournamentBonus -= 160;
+      isTournamentMatch = true;
+    }
+    if (t1IsTourn && t2IsTourn) {
+      // Echtes Turnier-Duell gegeneinander: Optimales Vorbereitungsspiel!
+      tournamentBonus -= 60;
+    }
+
+    // Schleifchenturnier-Bedingung: Fordernde Spiele gegen ebenbürtige/stärkere Gegner
+    if (tournamentConfig?.isActive && tournamentConfig.type === 'schleifchen') {
+      const sIds = new Set(tournamentConfig.schleifchenPlayerIds || []);
+      const p1S = sIds.has(p1.id);
+      const p2S = sIds.has(p2.id);
+      const p3S = sIds.has(p3.id);
+      const p4S = sIds.has(p4.id);
+
+      if (p1S || p2S || p3S || p4S) {
+        isTournamentMatch = true;
+        // Wenn Team 1 Schleifchen-Teilnehmer enthält
+        if (p1S || p2S) {
+          if (team2.totalSkill < team1.totalSkill - 1.0) {
+            tournamentBonus += 80; // Gegner zu schwach -> meiden
+          } else if (team2.totalSkill >= team1.totalSkill - 0.5) {
+            tournamentBonus -= 40; // Forderndes Spiel -> bevorzugen
+          }
+        }
+        // Wenn Team 2 Schleifchen-Teilnehmer enthält
+        if (p3S || p4S) {
+          if (team1.totalSkill < team2.totalSkill - 1.0) {
+            tournamentBonus += 80; // Gegner zu schwach -> meiden
+          } else if (team1.totalSkill >= team2.totalSkill - 0.5) {
+            tournamentBonus -= 40; // Forderndes Spiel -> bevorzugen
+          }
+        }
+      }
+    }
+
     let cost = 0;
     if (roundType === 'peer') {
-      cost = balancePenalty * 1.5 + historyPenalty + guestBonus;
+      cost = balancePenalty * 1.5 + historyPenalty + guestBonus + tournamentBonus;
     } else {
-      cost = balancePenalty + historyPenalty + guestBonus;
+      cost = balancePenalty + historyPenalty + guestBonus + tournamentBonus;
     }
 
     if (cost < lowestCost || bestMatch === null) {
@@ -256,7 +436,8 @@ export function findBestCourtMatchWithCost(
         team1,
         team2,
         roundType,
-        skillDiff
+        skillDiff,
+        isTournamentMatch: isTournamentMatch || undefined
       };
     }
   }
@@ -273,7 +454,9 @@ export function findBestCourtMatch(
   fourPlayers: [Player, Player, Player, Player],
   roundType: 'peer' | 'mentor' | 'social',
   historicalPairings: HistoricalPairing[],
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  tournamentConfig?: TournamentConfig,
+  targetPairs: TournamentPair[] = []
 ): Match {
   return findBestCourtMatchWithCost(
     roundNumber,
@@ -281,7 +464,9 @@ export function findBestCourtMatch(
     fourPlayers,
     roundType,
     historicalPairings,
-    previousRounds
+    previousRounds,
+    tournamentConfig,
+    targetPairs
   ).match;
 }
 
@@ -338,11 +523,21 @@ function selectRestingPlayers(
 function selectSinglesPlayers(
   pool: Player[],
   roundType: 'peer' | 'mentor' | 'social',
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  targetPairs: TournamentPair[] = []
 ): [Player, Player] | null {
   // Trainer darf niemals im Einzel spielen
-  const candidates = pool.filter(p => p.id !== TRAINER_ID);
+  let candidates = pool.filter(p => p.id !== TRAINER_ID);
   if (candidates.length < 2) return null;
+
+  // Falls Turniermodus aktiv ist, vermeiden wir es nach Möglichkeit, Spieler aus gemeldeten Turnierpaaren ins Einzel zu schicken
+  if (targetPairs.length > 0) {
+    const targetPairPlayerIds = new Set(targetPairs.flatMap(tp => [tp.player1Id, tp.player2Id]));
+    const nonTournamentCandidates = candidates.filter(p => !targetPairPlayerIds.has(p.id));
+    if (nonTournamentCandidates.length >= 2) {
+      candidates = nonTournamentCandidates;
+    }
+  }
 
   // Im Peer-Modus (Niveau-Gleichheit): Die beiden Spieler am unteren Ende der Rangliste
   // bilden das Zusatzfeld, damit die stärkeren Spieler auf den vorderen Feldern Doppel spielen
@@ -402,12 +597,14 @@ function generateMentorMatches(
   players: Player[],
   courtCount: number,
   historicalPairings: HistoricalPairing[],
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  tournamentConfig?: TournamentConfig,
+  targetPairs: TournamentPair[] = []
 ): Match[] {
   if (courtCount <= 1) {
     const four = players.slice(0, 4) as [Player, Player, Player, Player];
     return [
-      findBestCourtMatch(roundNumber, 1, four, 'mentor', historicalPairings, previousRounds)
+      findBestCourtMatch(roundNumber, 1, four, 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs)
     ];
   }
 
@@ -425,6 +622,10 @@ function generateMentorMatches(
     weak[2 * courtCount - 1 - c]
   ]);
 
+  if (targetPairs.length > 0) {
+    uniteTournamentPairsOnCourts(courts, targetPairs);
+  }
+
   // 2-Opt Swap-Optimierung zwischen Feldern:
   // Strong tauscht mit Strong (Index 0,1), Weak tauscht mit Weak (Index 2,3)
   // Dies garantiert, dass die Mentor-Bedingung auf jedem Feld streng erhalten bleibt.
@@ -439,8 +640,8 @@ function generateMentorMatches(
         for (let s1 = 0; s1 < 2; s1++) {
           for (let s2 = 0; s2 < 2; s2++) {
             const currentCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             const temp1 = courts[c1][s1];
             const temp2 = courts[c2][s2];
@@ -448,8 +649,8 @@ function generateMentorMatches(
             courts[c2][s2] = temp1;
 
             const newCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             if (newCost < currentCost - 0.01) {
               improved = true;
@@ -463,8 +664,8 @@ function generateMentorMatches(
         for (let w1 = 2; w1 < 4; w1++) {
           for (let w2 = 2; w2 < 4; w2++) {
             const currentCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             const temp1 = courts[c1][w1];
             const temp2 = courts[c2][w2];
@@ -472,8 +673,8 @@ function generateMentorMatches(
             courts[c2][w2] = temp1;
 
             const newCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             if (newCost < currentCost - 0.01) {
               improved = true;
@@ -491,7 +692,7 @@ function generateMentorMatches(
   for (let c = 0; c < courtCount; c++) {
     const courtNumber = c + 1;
     matches.push(
-      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'mentor', historicalPairings, previousRounds)
+      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'mentor', historicalPairings, previousRounds, tournamentConfig, targetPairs)
     );
   }
 
@@ -510,12 +711,14 @@ function generateSocialMatches(
   players: Player[],
   courtCount: number,
   historicalPairings: HistoricalPairing[],
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  tournamentConfig?: TournamentConfig,
+  targetPairs: TournamentPair[] = []
 ): Match[] {
   if (courtCount <= 1) {
     const four = players.slice(0, 4) as [Player, Player, Player, Player];
     return [
-      findBestCourtMatch(roundNumber, 1, four, 'social', historicalPairings, previousRounds)
+      findBestCourtMatch(roundNumber, 1, four, 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs)
     ];
   }
 
@@ -536,6 +739,10 @@ function generateSocialMatches(
     }
   }
 
+  if (targetPairs.length > 0) {
+    uniteTournamentPairsOnCourts(courts, targetPairs);
+  }
+
   // 2-Opt Swap-Optimierung zwischen allen Feldern
   let improved = true;
   let itCount = 0;
@@ -547,8 +754,8 @@ function generateSocialMatches(
         for (let p1 = 0; p1 < 4; p1++) {
           for (let p2 = 0; p2 < 4; p2++) {
             const currentCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             const temp1 = courts[c1][p1];
             const temp2 = courts[c2][p2];
@@ -556,8 +763,8 @@ function generateSocialMatches(
             courts[c2][p2] = temp1;
 
             const newCost =
-              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds).cost +
-              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds).cost;
+              findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost +
+              findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs).cost;
 
             if (newCost < currentCost - 0.01) {
               improved = true;
@@ -575,7 +782,7 @@ function generateSocialMatches(
   for (let c = 0; c < courtCount; c++) {
     const courtNumber = c + 1;
     matches.push(
-      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'social', historicalPairings, previousRounds)
+      findBestCourtMatch(roundNumber, courtNumber, courts[c], 'social', historicalPairings, previousRounds, tournamentConfig, targetPairs)
     );
   }
 
@@ -595,7 +802,8 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
     trainerSkill = 7,
     maxCourts = 8,
     historicalPairings = [],
-    previousRoundsCurrentSession = []
+    previousRoundsCurrentSession = [],
+    tournamentConfig
   } = options;
 
   // 1. Anwesende Spieler für diese konkrete Runde filtern
@@ -651,12 +859,19 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
     previousRoundsCurrentSession
   );
 
+  // Aktive Turnierpaare für diese Runde ermitteln
+  const targetPairs = getTargetTournamentPairsForRound(
+    tournamentConfig,
+    activePlayers,
+    previousRoundsCurrentSession
+  );
+
   let poolForDoubles = [...activePlayers];
   let singlesMatch: SinglesMatch | null = null;
 
   // 5. Einzel- bzw. Trainer-Challenge-Paarung ermitteln (mit Trainer-Ausschluss und Historien-Rotation)
   if (hasSingles) {
-    const singlesPair = selectSinglesPlayers(activePlayers, roundType, previousRoundsCurrentSession);
+    const singlesPair = selectSinglesPlayers(activePlayers, roundType, previousRoundsCurrentSession, targetPairs);
     if (singlesPair) {
       const [s1, s2] = singlesPair;
       const singlesCourtNumber = maxPossibleDoublesCourts + 1;
@@ -710,6 +925,11 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
         courts.push(sorted.slice(c * 4, c * 4 + 4) as [Player, Player, Player, Player]);
       }
 
+      // Bei gemeldeten Turnierpaaren gezielt zusammenführen
+      if (targetPairs.length > 0) {
+        uniteTournamentPairsOnCourts(courts, targetPairs);
+      }
+
       // Option A: Wenn Gast und einladender Freund eine ähnliche Spielstärke haben (Differenz <= 2.0),
       // aber auf benachbarten Feldern gelandet sind, auf dasselbe Feld zusammenführen
       for (const guest of poolForDoubles) {
@@ -749,6 +969,41 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
         }
       }
 
+      // 2-Opt Swap-Optimierung zwischen Feldern im Peer-Modus (verfeinert Balance und Turniervorgaben)
+      let improved = true;
+      let itCount = 0;
+      while (improved && itCount < 25) {
+        improved = false;
+        itCount++;
+        for (let c1 = 0; c1 < maxPossibleDoublesCourts; c1++) {
+          for (let c2 = c1 + 1; c2 < maxPossibleDoublesCourts; c2++) {
+            for (let p1 = 0; p1 < 4; p1++) {
+              for (let p2 = 0; p2 < 4; p2++) {
+                const currentCost =
+                  findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'peer', historicalPairings, previousRoundsCurrentSession, tournamentConfig, targetPairs).cost +
+                  findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'peer', historicalPairings, previousRoundsCurrentSession, tournamentConfig, targetPairs).cost;
+
+                const temp1 = courts[c1][p1];
+                const temp2 = courts[c2][p2];
+                courts[c1][p1] = temp2;
+                courts[c2][p2] = temp1;
+
+                const newCost =
+                  findBestCourtMatchWithCost(roundNumber, c1 + 1, courts[c1], 'peer', historicalPairings, previousRoundsCurrentSession, tournamentConfig, targetPairs).cost +
+                  findBestCourtMatchWithCost(roundNumber, c2 + 1, courts[c2], 'peer', historicalPairings, previousRoundsCurrentSession, tournamentConfig, targetPairs).cost;
+
+                if (newCost < currentCost - 0.01) {
+                  improved = true;
+                } else {
+                  courts[c1][p1] = temp1;
+                  courts[c2][p2] = temp2;
+                }
+              }
+            }
+          }
+        }
+      }
+
       for (let c = 0; c < maxPossibleDoublesCourts; c++) {
         const courtNumber = c + 1;
         const match = findBestCourtMatch(
@@ -757,7 +1012,9 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
           courts[c],
           'peer',
           historicalPairings,
-          previousRoundsCurrentSession
+          previousRoundsCurrentSession,
+          tournamentConfig,
+          targetPairs
         );
         matches.push(match);
       }
@@ -771,7 +1028,9 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
           poolForDoubles,
           maxPossibleDoublesCourts,
           historicalPairings,
-          previousRoundsCurrentSession
+          previousRoundsCurrentSession,
+          tournamentConfig,
+          targetPairs
         )
       );
     } else {
@@ -784,7 +1043,9 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
           poolForDoubles,
           maxPossibleDoublesCourts,
           historicalPairings,
-          previousRoundsCurrentSession
+          previousRoundsCurrentSession,
+          tournamentConfig,
+          targetPairs
         )
       );
     }
@@ -811,6 +1072,7 @@ export function generateFullSession(
     trainerSkill?: number;
     maxCourts?: number;
     historicalPairings?: HistoricalPairing[];
+    tournamentConfig?: TournamentConfig;
   } = {}
 ): SessionPlan {
   const today = new Date().toISOString().split('T')[0];

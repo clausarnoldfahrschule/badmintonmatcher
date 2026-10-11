@@ -5,14 +5,15 @@
  * bei Trainer-Urlaub oder Krankheit an die Vertretung.
  */
 
-import { Player, HistoricalPairing, BackupData, SessionPlan } from '../types';
+import { Player, HistoricalPairing, BackupData, SessionPlan, TournamentConfig } from '../types';
 import { encryptData, decryptData } from '../utils/crypto';
 
 const STORAGE_KEYS = {
   PLAYERS: 'badminton_players_v1',
   HISTORY: 'badminton_history_v1',
   TRAINER_SKILL: 'badminton_trainer_skill_v1',
-  ACTIVE_SESSION: 'badminton_active_session_v1'
+  ACTIVE_SESSION: 'badminton_active_session_v1',
+  TOURNAMENT: 'badminton_tournament_v1'
 };
 
 export interface ActiveSessionState {
@@ -152,6 +153,59 @@ export function saveTrainerSkill(skill: number): void {
 }
 
 /**
+ * Standard-Konfiguration für den Turniermodus
+ */
+export const DEFAULT_TOURNAMENT_CONFIG: TournamentConfig = {
+  isActive: false,
+  type: 'doubles',
+  pairs: [],
+  schleifchenPlayerIds: []
+};
+
+/**
+ * Lädt die Turnier-Konfiguration.
+ * Deaktiviert den Turniermodus automatisch, wenn das Turnierdatum in der Vergangenheit liegt.
+ */
+export function loadTournamentConfig(): TournamentConfig {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.TOURNAMENT);
+    if (!raw) return { ...DEFAULT_TOURNAMENT_CONFIG };
+    const config: TournamentConfig = JSON.parse(raw);
+
+    // Automatische Deaktivierung nach Ablauf des Turniertages
+    if (config.isActive && config.tournamentDate) {
+      const today = new Date().toISOString().split('T')[0];
+      if (config.tournamentDate < today) {
+        config.isActive = false;
+        saveTournamentConfig(config);
+      }
+    }
+    return {
+      isActive: Boolean(config.isActive),
+      type: config.type || 'doubles',
+      tournamentDate: config.tournamentDate || '',
+      title: config.title || '',
+      pairs: Array.isArray(config.pairs) ? config.pairs : [],
+      schleifchenPlayerIds: Array.isArray(config.schleifchenPlayerIds) ? config.schleifchenPlayerIds : []
+    };
+  } catch (err) {
+    console.error('Fehler beim Laden der Turnier-Konfiguration:', err);
+    return { ...DEFAULT_TOURNAMENT_CONFIG };
+  }
+}
+
+/**
+ * Speichert die Turnier-Konfiguration
+ */
+export function saveTournamentConfig(config: TournamentConfig): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.TOURNAMENT, JSON.stringify(config));
+  } catch (err) {
+    console.error('Fehler beim Speichern der Turnier-Konfiguration:', err);
+  }
+}
+
+/**
  * Exportiert den gesamten Datenbestand verschlüsselt mit einem Passwort
  */
 export async function exportEncryptedBackup(password: string): Promise<string> {
@@ -160,7 +214,8 @@ export async function exportEncryptedBackup(password: string): Promise<string> {
     exportedAt: new Date().toISOString(),
     players: loadPlayers(),
     history: loadHistory(),
-    trainerSkill: loadTrainerSkill()
+    trainerSkill: loadTrainerSkill(),
+    tournamentConfig: loadTournamentConfig()
   };
 
   return await encryptData(backup, password);
@@ -186,6 +241,9 @@ export async function importEncryptedBackup(
   if (typeof data.trainerSkill === 'number') {
     saveTrainerSkill(data.trainerSkill);
   }
+  if (data.tournamentConfig) {
+    saveTournamentConfig(data.tournamentConfig);
+  }
 
   return {
     playersCount: data.players.length,
@@ -200,6 +258,7 @@ export function resetToDemo(): void {
   savePlayers(DEFAULT_DEMO_PLAYERS);
   saveHistory([]);
   saveTrainerSkill(7);
+  saveTournamentConfig(DEFAULT_TOURNAMENT_CONFIG);
   clearActiveSession();
 }
 

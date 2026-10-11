@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Player, SessionPlan, HistoricalPairing, MatchScore, SkillProposal, RoundPlan } from '../types';
+import { Player, SessionPlan, HistoricalPairing, MatchScore, SkillProposal, RoundPlan, TournamentConfig } from '../types';
 import { generateFullSession, generateRoundPlan, sessionPlanToHistoricalPairings } from '../services/pairingEngine';
-import { loadHistory, saveHistory, loadActiveSession, saveActiveSession, clearActiveSession } from '../services/storage';
+import { loadHistory, saveHistory, loadActiveSession, saveActiveSession, clearActiveSession, loadTournamentConfig, saveTournamentConfig } from '../services/storage';
 import {
   accumulateSessionEvidence,
   generateSkillProposals,
@@ -13,6 +13,7 @@ import { SinglesCourtCard } from './SinglesCourtCard';
 import { DropoutModal } from './DropoutModal';
 import { SkillProposalModal } from './SkillProposalModal';
 import { GuestModal } from './GuestModal';
+import { TournamentModal } from './TournamentModal';
 import {
   Play,
   AlertTriangle,
@@ -24,7 +25,8 @@ import {
   RotateCcw,
   Sparkles,
   UserPlus,
-  Trash2
+  Trash2,
+  Trophy
 } from 'lucide-react';
 
 interface TrainingViewProps {
@@ -51,6 +53,17 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     generateSkillProposals(players)
   );
   const [isProposalModalOpen, setIsProposalModalOpen] = useState<boolean>(false);
+
+  // Turniermodus Zustand & Modal
+  const [tournamentConfig, setTournamentConfig] = useState<TournamentConfig>(() =>
+    loadTournamentConfig()
+  );
+  const [isTournamentModalOpen, setIsTournamentModalOpen] = useState<boolean>(false);
+
+  const handleSaveTournamentConfig = (newConfig: TournamentConfig) => {
+    saveTournamentConfig(newConfig);
+    setTournamentConfig(newConfig);
+  };
 
   useEffect(() => {
     setPendingProposals(generateSkillProposals(players));
@@ -166,7 +179,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       trainerAvailable,
       trainerSkill,
       maxCourts: 8,
-      historicalPairings: currentHist
+      historicalPairings: currentHist,
+      tournamentConfig
     });
     setSessionPlan(plan);
     setSessionSaved(false);
@@ -344,7 +358,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         trainerSkill,
         maxCourts: 8,
         historicalPairings: history,
-        previousRoundsCurrentSession: prevRounds
+        previousRoundsCurrentSession: prevRounds,
+        tournamentConfig
       });
     }
 
@@ -416,10 +431,55 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
               className="text-xs font-bold px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg transition flex items-center gap-1.5 shadow-xs"
             >
               <UserPlus className="w-3.5 h-3.5" />
-              <span>+ Gast anmelden</span>
+              <span>+ Gast</span>
+            </button>
+            <button
+              onClick={() => setIsTournamentModalOpen(true)}
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-xs ${
+                tournamentConfig.isActive
+                  ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+              }`}
+            >
+              <Trophy className={`w-3.5 h-3.5 ${tournamentConfig.isActive ? 'text-amber-700' : 'text-slate-500'}`} />
+              <span>Turnier{tournamentConfig.isActive ? ' (Aktiv)' : ''}</span>
             </button>
           </div>
         </div>
+
+        {/* Turniermodus Info-Banner wenn aktiv */}
+        {tournamentConfig.isActive && (
+          <div className="mb-4 bg-gradient-to-r from-amber-50 via-amber-100/40 to-amber-50 border border-amber-300 rounded-2xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-amber-500 text-white rounded-xl shadow-xs">
+                <Trophy className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full">
+                    Turniermodus aktiv
+                  </span>
+                  <span className="text-xs font-bold text-slate-900">
+                    {tournamentConfig.title || (tournamentConfig.type === 'doubles' ? 'Doppel- / Mixed-Vorbereitung' : 'Schleifchenturnier-Vorbereitung')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  {tournamentConfig.type === 'doubles'
+                    ? `${tournamentConfig.pairs.length} Paarung(en) gemeldet`
+                    : `${tournamentConfig.schleifchenPlayerIds.length} Schleifchen-Spieler ausgewählt`}
+                  {tournamentConfig.tournamentDate ? ` · Datum: ${new Date(tournamentConfig.tournamentDate).toLocaleDateString('de-DE')}` : ''}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsTournamentModalOpen(true)}
+              className="text-xs font-bold px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition shadow-xs"
+            >
+              Konfigurieren
+            </button>
+          </div>
+        )}
 
         {/* Statusanzeige Teilnehmer pro Runde */}
         <div className="grid grid-cols-3 gap-2 mb-4">
@@ -834,6 +894,15 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         onClose={() => setIsGuestModalOpen(false)}
         availableHosts={players.filter(p => !p.isGuest)}
         onAddGuest={handleAddGuest}
+      />
+
+      {/* Turniermodus Modal */}
+      <TournamentModal
+        isOpen={isTournamentModalOpen}
+        onClose={() => setIsTournamentModalOpen(false)}
+        players={players}
+        tournamentConfig={tournamentConfig}
+        onSaveConfig={handleSaveTournamentConfig}
       />
     </div>
   );

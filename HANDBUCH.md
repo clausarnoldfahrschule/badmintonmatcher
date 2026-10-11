@@ -10,10 +10,11 @@ Willkommen beim offiziellen Handbuch für den **Badminton Matchmaker**. Dieses D
 3. [Die drei Rundenmodi im Detail](#3-die-drei-rundemodi-im-detail)
 4. [Sonderregeln: Trainer-Joker & Einzel](#4-sonderregeln-trainer-joker--einzel)
 5. [Gastspieler-Modus ("Gäste")](#5-gastspieler-modus-gäste)
-6. [Ergebniserfassung & Selbsteinstufungssystem](#6-ergebniserfassung--selbsteinstufungssystem)
-7. [Spieler-Stammdaten & Spielstärken](#7-spieler-stammdaten--spielstärken)
-8. [Datensicherung, Verschlüsselung & Vertretung](#8-datensicherung-verschlüsselung--vertretung)
-9. [Offline-Nutzung & Installation als App (PWA)](#9-offline-nutzung--installation-als-app-pwa)
+6. [Turniermodus ("Turniervorbereitung")](#6-turniermodus-turniervorbereitung)
+7. [Ergebniserfassung & Selbsteinstufungssystem](#7-ergebniserfassung--selbsteinstufungssystem)
+8. [Spieler-Stammdaten & Spielstärken](#8-spieler-stammdaten--spielstärken)
+9. [Datensicherung, Verschlüsselung & Vertretung](#9-datensicherung-verschlüsselung--vertretung)
+10. [Offline-Nutzung & Installation als App (PWA)](#10-offline-nutzung--installation-als-app-pwa)
 
 ---
 
@@ -102,7 +103,30 @@ Für Schnuppertrainings, Freunde von Vereinsmitgliedern und spontane Gäste:
 
 ---
 
-## 6. Ergebniserfassung & Selbsteinstufungssystem
+## 6. Turniermodus ("Turniervorbereitung") 🏆
+
+Vor anstehenden Meisterschaften, Ranglistenturnieren oder Vereinsturnieren können feste Paarungen oder Schleifchen-Kandidaten gezielt trainieren.
+
+### A. Doppel- & Mixed-Turnier
+- **Feste Paare erfassen:** Im Dialog `🏆 Turniermodus` werden feste Doppelpaare (z. B. Claus + Simone, Alex + Nico) hinterlegt.
+- **Mehrfach-Paarungen (Überschneidungen):**
+  - Ein Spieler darf problemlos in mehreren Paaren gemeldet sein (z. B. Claus mit Simone für Mixed und Claus mit Nico für Herrendoppel).
+  - Die App verteilt sie automatisch intelligent über den Abend: In Runde 1 spielt Claus mit Simone, in Runde 2 oder 3 spielt Claus mit Nico.
+  - So kommt jede gemeldete Kombination verlässlich zum Einsatz!
+- **Wiederholungs-Bonus:** Für gemeldete Turnierpaare werden Wiederholungsstrafen aufgehoben – sie dürfen mehrfach an einem Abend zusammenspielen.
+- **Turnier-Duelle:** Treffen zwei gemeldete Turnierpaare aufeinander, erhalten sie einen zusätzlichen Paarungsbonus, um echte Wettkampfbedingungen zu simulieren.
+
+### B. Schleifchenturnier
+- **Fordernde Matches:** Für gemeldete Schleifchen-Spieler stellt die Paarungs-Engine sicher, dass sie an jedem Trainingsabend **zwei fordernde Spiele** gegen gleich starke oder stärkere Gegner erhalten (keine Unterforderung gegen reine Anfänger).
+
+### C. Lebenszyklus & Statusanzeige
+- **Automatische Deaktivierung:** Ist ein Turnierdatum eingetragen und der Turniertag vorbei, schaltet sich der Turniermodus beim nächsten Öffnen der App automatisch ab.
+- **Goldenes Badge auf dem Feld:** Auf den Spielfeldkarten signalisiert ein goldenes `🏆 Turnier`-Badge Spielern und Trainer, dass dieses Match der gezielten Turniervorbereitung dient.
+- **Vollständige Datensicherung:** Alle Turniereinstellungen fließen automatisch in den verschlüsselten Backup-Transfer für die Vertretung ein.
+
+---
+
+## 7. Ergebniserfassung & Selbsteinstufungssystem
 
 Die Erfassung von Spielergebnissen ist **vollständig optional**.
 
@@ -130,7 +154,7 @@ Die Erfassung von Spielergebnissen ist **vollständig optional**.
 
 ---
 
-## 7. Spieler-Stammdaten & Spielstärken
+## 8. Spieler-Stammdaten & Spielstärken
 
 Im Tab **„Spieler“** werden alle Mitglieder verwaltet:
 - **Basis-Spielstärke (1 bis 10):**
@@ -145,7 +169,7 @@ Im Tab **„Spieler“** werden alle Mitglieder verwaltet:
 
 ---
 
-## 8. Datensicherung, Verschlüsselung & Vertretung
+## 9. Datensicherung, Verschlüsselung & Vertretung
 
 Alle Daten liegen im lokalen Speicher des Browsers (`localStorage`).
 
@@ -158,7 +182,7 @@ Alle Daten liegen im lokalen Speicher des Browsers (`localStorage`).
 
 ---
 
-## 9. Offline-Nutzung & Installation als App (PWA)
+## 10. Offline-Nutzung & Installation als App (PWA)
 
 Die Web-App ist eine vollwertige **Progressive Web App (PWA)**:
 - **Offline:** Alle Funktionen laufen ohne Internetverbindung in Sporthallen.
