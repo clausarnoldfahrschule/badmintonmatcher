@@ -4,6 +4,7 @@ import {
   generateFullSession,
   calculateBalancePenalty,
   calculateHistoryPenalty,
+  findBestCourtMatch,
   TRAINER_ID
 } from './pairingEngine';
 import { Player, TournamentConfig } from '../types';
@@ -835,6 +836,29 @@ describe('Pairing Engine (Paarungs-Algorithmus)', () => {
       expect(() => {
         generateFullSession(testPlayers, att, { tournamentConfig, trainerAvailable: true });
       }).not.toThrow();
+    });
+
+    it('Historien-Rotation: Partner aus der Vorwoche werden aktiv rotiert & Gegner symmetrisch geprüft', () => {
+      const p1: Player = { id: 'p1', name: 'P1', skill: 7, isActive: true, createdAt: 1 };
+      const p2: Player = { id: 'p2', name: 'P2', skill: 7, isActive: true, createdAt: 2 };
+      const p3: Player = { id: 'p3', name: 'P3', skill: 7, isActive: true, createdAt: 3 };
+      const p4: Player = { id: 'p4', name: 'P4', skill: 7, isActive: true, createdAt: 4 };
+
+      // Vorwoche: p1 hat mit p2 zusammengespielt, gegen p3 und p4
+      const lastWeekHistory = [
+        {
+          date: '2026-11-12',
+          roundNumber: 1,
+          partnerMap: { p1: 'p2', p2: 'p1', p3: 'p4', p4: 'p3' },
+          opponentsMap: { p1: ['p3', 'p4'], p2: ['p3', 'p4'], p3: ['p1', 'p2'], p4: ['p1', 'p2'] }
+        }
+      ];
+
+      // Auf demselben Feld heute müssen die Partner rotiert werden (nicht wieder p1+p2 vs p3+p4!)
+      const match = findBestCourtMatch(1, 1, [p1, p2, p3, p4], 'peer', lastWeekHistory, []);
+      const t1Ids = [match.team1.player1.id, match.team1.player2.id];
+      const isStillSamePartner = t1Ids.includes('p1') && t1Ids.includes('p2');
+      expect(isStillSamePartner).toBe(false);
     });
   });
 });

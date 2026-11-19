@@ -246,19 +246,42 @@ export function calculateHistoryPenalty(
     }
   }
 
-  // 2. Prüfung in der Historie früherer Trainingsabende (Vorwochen)
-  for (const history of historicalPairings) {
-    // Partner-Prüfung Vorwochen (Strafe: 40 Punkte - entfällt für Gast & Freund sowie Turnierpaare)
+  // 2. Prüfung in der Historie früherer Trainingsabende (Vorwochen) mit Aktualitäts-Gewichtung (Time-Decay)
+  // Wir betrachten die letzten 15 gespeicherten Runden (entspricht 5 Trainingsabenden).
+  // Neuere Abende werden stärker bestraft als länger zurückliegende Abende.
+  const MAX_HISTORY_ROUNDS = 15;
+  const recentHistory = historicalPairings.slice(-MAX_HISTORY_ROUNDS);
+  const totalRecent = recentHistory.length;
+
+  for (let i = 0; i < totalRecent; i++) {
+    const history = recentHistory[i];
+    // roundsAgo: 0..2 = letzter Abend, 3..5 = vorletzter Abend, usw.
+    const roundsAgo = totalRecent - 1 - i;
+    const sessionsAgo = Math.floor(roundsAgo / 3);
+    // Gewichtungsfaktor: Letzter Abend = 1.25 (50 Pkt Partner), Vorletzter = 1.0 (40 Pkt), danach abnehmend bis 0.4
+    const weight = Math.max(0.4, 1.25 - sessionsAgo * 0.25);
+
+    // Partner-Prüfung Vorwochen (Basis 40 Punkte * Gewicht - entfällt für Gast & Freund sowie Turnierpaare)
     if (!isP1P2GuestHost && !isP1P2Tourn && (history.partnerMap[p1.id] === p2.id || history.partnerMap[p2.id] === p1.id)) {
-      penalty += 40;
+      penalty += Math.round(40 * weight);
     }
     if (!isP3P4GuestHost && !isP3P4Tourn && (history.partnerMap[p3.id] === p4.id || history.partnerMap[p4.id] === p3.id)) {
-      penalty += 40;
+      penalty += Math.round(40 * weight);
     }
 
-    // Gegner-Prüfung Vorwochen (Strafe: 10 Punkte)
-    if (history.opponentsMap[p1.id]?.includes(p3.id) || history.opponentsMap[p1.id]?.includes(p4.id)) {
-      penalty += 10;
+    // Symmetrische Gegner-Prüfung Vorwochen für alle 4 Kombinationen (p1 vs p3/p4 UND p2 vs p3/p4)
+    const oppPenaltyPerMatchup = Math.round(8 * weight);
+    if (history.opponentsMap[p1.id]?.includes(p3.id) || history.opponentsMap[p3.id]?.includes(p1.id)) {
+      penalty += oppPenaltyPerMatchup;
+    }
+    if (history.opponentsMap[p1.id]?.includes(p4.id) || history.opponentsMap[p4.id]?.includes(p1.id)) {
+      penalty += oppPenaltyPerMatchup;
+    }
+    if (history.opponentsMap[p2.id]?.includes(p3.id) || history.opponentsMap[p3.id]?.includes(p2.id)) {
+      penalty += oppPenaltyPerMatchup;
+    }
+    if (history.opponentsMap[p2.id]?.includes(p4.id) || history.opponentsMap[p4.id]?.includes(p2.id)) {
+      penalty += oppPenaltyPerMatchup;
     }
   }
 
@@ -471,12 +494,28 @@ export function findBestCourtMatch(
 }
 
 /**
- * Wählt pausierende Spieler fair aus, wenn die Spielerzahl nicht aufgeteilt werden kann
+ * Deterministischer Hash für eine faire, alphabet-unabhängige Pausen-Rotation
+ */
+function getFairRotationHash(seedStr: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) {
+    h ^= seedStr.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * Wählt pausierende Spieler fair aus, wenn die Spielerzahl nicht aufgeteilt werden kann.
+ * - Berücksichtigt Pausen am heutigen Abend (höchste Priorität)
+ * - Berücksichtigt Einsätze in den Vorwochen (wer viel gespielt hat, pausiert eher als jemand mit wenigen Spielen)
+ * - Nutzt einen tagesabhängigen Hash statt Alphabet-Sortierung, damit nicht immer Spieler mit 'A' in Runde 1 pausieren
  */
 function selectRestingPlayers(
   pool: Player[],
   neededCount: number,
-  previousRounds: RoundPlan[]
+  previousRounds: RoundPlan[],
+  historicalPairings: HistoricalPairing[] = []
 ): { activePlayers: Player[]; restingPlayers: Player[] } {
   if (pool.length <= neededCount) {
     return { activePlayers: [...pool], restingPlayers: [] };
@@ -484,8 +523,12 @@ function selectRestingPlayers(
 
   // Zähle, wie oft jeder Spieler an diesem Abend bereits pausiert hat
   const pauseCountMap = new Map<string, number>();
+  // Zähle historische Einsätze in den letzten 12 Runden
+  const histPlayedMap = new Map<string, number>();
+
   for (const p of pool) {
     pauseCountMap.set(p.id, 0);
+    histPlayedMap.set(p.id, 0);
   }
 
   for (const round of previousRounds) {
@@ -496,14 +539,37 @@ function selectRestingPlayers(
     }
   }
 
-  // Spieler sortieren: Wer am wenigsten pausiert hat, pausiert als Nächstes bevorzugt
+  const recentHist = historicalPairings.slice(-12);
+  for (const h of recentHist) {
+    for (const p of pool) {
+      if (h.partnerMap?.[p.id] || h.opponentsMap?.[p.id]) {
+        histPlayedMap.set(p.id, (histPlayedMap.get(p.id) || 0) + 1);
+      }
+    }
+  }
+
+  const todaySeed = new Date().toISOString().split('T')[0];
+
+  // Spieler sortieren:
+  // 1. Wer heute am wenigsten pausiert hat, pausiert als Nächstes
+  // 2. Bei Gleichstand: Wer in den letzten Wochen die meisten Spiele hatte, pausiert eher
+  // 3. Bei Gleichstand: Tages- und rundenabhängiger Hash (keine Benachteiligung von Buchstabe A!)
   const sorted = [...pool].sort((a, b) => {
     const pausesA = pauseCountMap.get(a.id) || 0;
     const pausesB = pauseCountMap.get(b.id) || 0;
     if (pausesA !== pausesB) {
       return pausesA - pausesB;
     }
-    return a.name.localeCompare(b.name);
+
+    const playedA = histPlayedMap.get(a.id) || 0;
+    const playedB = histPlayedMap.get(b.id) || 0;
+    if (playedA !== playedB) {
+      return playedB - playedA;
+    }
+
+    const hashA = getFairRotationHash(`${todaySeed}-${a.id}`);
+    const hashB = getFairRotationHash(`${todaySeed}-${b.id}`);
+    return hashA - hashB;
   });
 
   const restingCount = pool.length - neededCount;
@@ -856,7 +922,8 @@ export function generateRoundPlan(options: GenerateRoundOptions): RoundPlan {
   const { activePlayers, restingPlayers } = selectRestingPlayers(
     activePool,
     neededPlayerCount,
-    previousRoundsCurrentSession
+    previousRoundsCurrentSession,
+    historicalPairings
   );
 
   // Aktive Turnierpaare für diese Runde ermitteln

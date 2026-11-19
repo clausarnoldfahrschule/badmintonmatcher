@@ -22,6 +22,8 @@ export interface ActiveSessionState {
   attendance: Record<string, { round1: boolean; round2: boolean; round3: boolean }>;
   activeRoundTab: 1 | 2 | 3;
   trainerAvailable: boolean;
+  sessionSaved?: boolean;
+  preSavePlayersSnapshot?: Player[] | null;
 }
 
 /**
@@ -309,16 +311,25 @@ export function generateCompactQRPayload(): string {
   const trainerSkill = loadTrainerSkill();
   const tournamentConfig = loadTournamentConfig();
 
-  // Kompakter Spieler-Datensatz: [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId]
-  const compactPlayers = players.map(p => [
-    p.id,
-    p.name,
-    p.skill,
-    p.skillAdjustment ?? 0,
-    p.isActive ? 1 : 0,
-    p.isGuest ? 1 : 0,
-    p.invitedByPlayerId || ''
-  ]);
+  // Kompakter Spieler-Datensatz: [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId, compactEvidence]
+  const compactPlayers = players.map(p => {
+    const compactEv = p.evidence?.records?.length
+      ? p.evidence.records.map(r => [r.partnerId, r.surpriseSignal])
+      : undefined;
+    const tuple: any[] = [
+      p.id,
+      p.name,
+      p.skill,
+      p.skillAdjustment ?? 0,
+      p.isActive ? 1 : 0,
+      p.isGuest ? 1 : 0,
+      p.invitedByPlayerId || ''
+    ];
+    if (compactEv) {
+      tuple.push(compactEv);
+    }
+    return tuple;
+  });
 
   // Neueste Historie (bis zu 12 Einheiten / 36 Runden reichen für Wiederholungs-Strafen vollkommen aus)
   const recentHistory = history.slice(-12).map(h => [
@@ -386,12 +397,28 @@ export function parseAndImportCompactQRPayload(qrString: string): {
 
   // 1. Spieler wiederherstellen
   const players: Player[] = payload.p.map((item: any[]) => {
-    const [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId] = item;
+    const [id, name, skill, skillAdjustment, isActive, isGuest, invitedByPlayerId, compactEv] = item;
+    const evidence = Array.isArray(compactEv) && compactEv.length > 0
+      ? {
+          records: compactEv.map((evItem: any[]) => ({
+            date: new Date().toISOString().split('T')[0],
+            partnerId: String(evItem[0] || ''),
+            opponentIds: ['', ''] as [string, string],
+            pointDiff: 0,
+            calculatedDiff: 0,
+            observedSignal: Number(evItem[1] || 0),
+            expectedSignal: 0,
+            surpriseSignal: Number(evItem[1] || 0)
+          }))
+        }
+      : undefined;
+
     return {
       id: String(id),
       name: String(name),
       skill: Number(skill),
       skillAdjustment: skillAdjustment ? Number(skillAdjustment) : undefined,
+      evidence,
       isActive: Boolean(isActive),
       isGuest: Boolean(isGuest),
       invitedByPlayerId: invitedByPlayerId ? String(invitedByPlayerId) : undefined,

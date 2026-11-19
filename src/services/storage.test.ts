@@ -178,9 +178,30 @@ describe('Storage Service & Encrypted Transfer', () => {
 
   describe('QR-Code Schnellübertragung', () => {
     it('sollte einen kompakten QR-Payload erzeugen und vollständig importieren', () => {
-      // 1. Individuelle Spieler und Daten anlegen
+      // 1. Individuelle Spieler und Daten anlegen (inkl. laufender Evidenz)
       const customPlayers: Player[] = [
-        { id: 'siggi', name: 'Siggi', skill: 7, skillAdjustment: 0.3, isActive: true, createdAt: 100 },
+        {
+          id: 'siggi',
+          name: 'Siggi',
+          skill: 7,
+          skillAdjustment: 0.3,
+          evidence: {
+            records: [
+              {
+                date: '2026-11-12',
+                partnerId: 'claus',
+                opponentIds: ['p2', 'p3'],
+                pointDiff: 15,
+                calculatedDiff: 0,
+                observedSignal: 1,
+                expectedSignal: 0,
+                surpriseSignal: 1
+              }
+            ]
+          },
+          isActive: true,
+          createdAt: 100
+        },
         { id: 'claus', name: 'Claus', skill: 9, isActive: true, createdAt: 101 },
         { id: 'gast1', name: 'Lukas Gast', skill: 5, isActive: true, isGuest: true, invitedByPlayerId: 'claus', createdAt: 102 }
       ];
@@ -214,6 +235,9 @@ describe('Storage Service & Encrypted Transfer', () => {
       expect(restoredPlayers).toHaveLength(3);
       expect(restoredPlayers[0].name).toBe('Siggi');
       expect(restoredPlayers[0].skillAdjustment).toBe(0.3);
+      expect(restoredPlayers[0].evidence?.records).toHaveLength(1);
+      expect(restoredPlayers[0].evidence?.records[0].partnerId).toBe('claus');
+      expect(restoredPlayers[0].evidence?.records[0].surpriseSignal).toBe(1);
       expect(restoredPlayers[2].isGuest).toBe(true);
       expect(restoredPlayers[2].invitedByPlayerId).toBe('claus');
 

@@ -112,7 +112,12 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     savedSession ? savedSession.activeRoundTab : 1
   );
   const [isDropoutModalOpen, setIsDropoutModalOpen] = useState<boolean>(false);
-  const [sessionSaved, setSessionSaved] = useState<boolean>(false);
+  const [sessionSaved, setSessionSaved] = useState<boolean>(
+    savedSession?.sessionSaved ?? false
+  );
+  const [preSavePlayersSnapshot, setPreSavePlayersSnapshot] = useState<Player[] | null>(
+    savedSession?.preSavePlayersSnapshot ?? null
+  );
 
   // Aktiven Trainingsabend automatisch im LocalStorage sichern
   useEffect(() => {
@@ -120,9 +125,11 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       sessionPlan,
       attendance,
       activeRoundTab,
-      trainerAvailable
+      trainerAvailable,
+      sessionSaved,
+      preSavePlayersSnapshot
     });
-  }, [sessionPlan, attendance, activeRoundTab, trainerAvailable]);
+  }, [sessionPlan, attendance, activeRoundTab, trainerAvailable, sessionSaved, preSavePlayersSnapshot]);
 
   // Zähle anwesende Spieler pro Runde
   const activeCountR1 = players.filter(p => attendance[p.id]?.round1).length;
@@ -184,6 +191,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     });
     setSessionPlan(plan);
     setSessionSaved(false);
+    setPreSavePlayersSnapshot(null);
 
     // Sanft zum generierten Spielplan scrollen
     setTimeout(() => {
@@ -242,14 +250,26 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
   const handleSaveSession = () => {
     if (!sessionPlan) return;
     const newPairings = sessionPlanToHistoricalPairings(sessionPlan);
-    const updatedHistory = [...history, ...newPairings];
+
+    // Falls dieser Abend bereits einmal gespeichert wurde (z.B. vor einer Ergebniskorrektur),
+    // ersetzen wir die letzten 3 Einträge dieses Abends statt sie doppelt anzuhängen.
+    // Außerdem begrenzen wir die Gesamthistorie auf maximal 60 Runden (20 Trainingsabende).
+    const isResaveOfCurrentSession = preSavePlayersSnapshot !== null && history.length >= 3;
+    const baseHistory = isResaveOfCurrentSession ? history.slice(0, -3) : history;
+    const updatedHistory = [...baseHistory, ...newPairings].slice(-60);
+
     saveHistory(updatedHistory);
     setHistory(updatedHistory);
     setSessionSaved(true);
 
-    // Evidenz aus Runde 1 akkumulieren
+    // Evidenz aus Runde 1 akkumulieren (auf Basis des Snapshots vor dem ersten Speichern dieses Abends,
+    // damit Ergebnis-Korrekturen nicht doppelt auf die Spieler-Evidenz addiert werden)
     if (onUpdatePlayers) {
-      const updatedPlayers = accumulateSessionEvidence(players, sessionPlan.rounds[0], sessionPlan.date);
+      const basePlayers = preSavePlayersSnapshot ?? players;
+      if (!preSavePlayersSnapshot) {
+        setPreSavePlayersSnapshot(players);
+      }
+      const updatedPlayers = accumulateSessionEvidence(basePlayers, sessionPlan.rounds[0], sessionPlan.date);
       onUpdatePlayers(updatedPlayers);
       const props = generateSkillProposals(updatedPlayers);
       setPendingProposals(props);
@@ -270,6 +290,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       clearActiveSession();
       setSessionPlan(null);
       setSessionSaved(false);
+      setPreSavePlayersSnapshot(null);
       setActiveRoundTab(1);
 
       // Gäste für den nächsten Abend entfernen
